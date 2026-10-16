@@ -15,10 +15,5 @@ backups/
 backup-key.txt
 zap-report/
 
-# Impeccable: ekran görüntüleri ve geçici dosyalar (tasarım kayıtları commit edilir)
-apps/web/.impeccable/review/
-apps/web/.impeccable/questions/
-apps/web/.impeccable/brief-body.md
-
 # Başkalarına ait tasarım ilham görselleri: telif ve kişisel bilgi nedeniyle repoya girmez.
 docs/ornek/

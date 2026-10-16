@@ -1,207 +1,136 @@
+<div align="center">
+
 # JobTrack
 
-İş başvurularını başvurudan teklif veya red aşamasına kadar takip eden kişisel CRM. Gereksinimler: [`docs/requirements.md`](docs/requirements.md) · Mimari kararlar: [`docs/adr/`](docs/adr/)
+**İş arama sürecini tek bir yerde toplayan kişisel başvuru takip uygulaması.**
 
-## Hızlı başlangıç (Docker)
+İlanı tek tıkla kaydet, CV'ni o ilana göre tek sayfaya uyarla, başvurunun her adımını takip et ve neyin işe yaradığını panoda gör.
 
-Gereksinim: Docker Compose v2, OpenSSL.
+[![CI](https://github.com/berraslar/jobtrack/actions/workflows/ci.yml/badge.svg)](https://github.com/berraslar/jobtrack/actions/workflows/ci.yml)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React_19-20232A?logo=react&logoColor=61DAFB)
+![Fastify](https://img.shields.io/badge/Fastify_5-000000?logo=fastify&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_18-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![WCAG 2.2 AA](https://img.shields.io/badge/WCAG_2.2-AA-2e7d32)
+
+<img src="docs/ekran-goruntuleri/pano.webp" alt="JobTrack panosu: başvuru sayısı, dönüş, mülakat ve teklif oranları, aşamalara göre ve haftalık başvuru grafikleri" width="100%">
+
+</div>
+
+## Neden JobTrack?
+
+İş ararken başvurular LinkedIn'e, Kariyer.net'e, e-postaya ve not defterlerine dağılır. Hangi ilana hangi CV ile başvurduğun, kimden ne zamandır ses çıkmadığı ve hangi CV'nin gerçekten dönüş aldığı kaybolur. JobTrack bunların hepsini tek bir düzenli yerde toplar ve her gün ilk olarak neyle ilgilenmen gerektiğini gösterir.
+
+## Öne çıkanlar
+
+### Tek tıkla ilan kaydı
+
+Tarayıcının yer imi çubuğuna eklenen küçük bir yer imi, açık ilan sayfasından pozisyonu, şirketi, konumu, temiz ilan bağlantısını ve **ilan metninin tamamını** okuyup yeni başvuru formunu önceden dolu açar. LinkedIn, Kariyer.net, Youthall ve schema.org `JobPosting` verisi taşıyan şirket kariyer sayfalarında (Greenhouse, Lever, Workday…) çalışır. Kaydı her zaman kullanıcı yapar.
+
+<img src="docs/ekran-goruntuleri/yer-imiyle-kayit.webp" alt="Yer imiyle Kariyer.net ilanından önceden doldurulmuş yeni başvuru formu" width="100%">
+
+### Yapay zekâ ile ilana göre CV
+
+Ana CV'yi bir kez kaydedersin (PDF'ini sürükleyip bırakman yeter). Bir başvuru seçince yapay zekâ CV'ni o ilana göre yeniden sıralar ve kısaltır; uyum skorunu, ilanda olup CV'de olmayan anahtar kelimeleri ve yaptığı her değişikliği listeler.
+
+- **Uydurma yok:** model yalnızca sıralar, yeniden ifade eder ve çıkarır. Çıktıda Ana CV'de olmayan bir tarih, süre ya da şirket adı geçerse uyarı gösterilir.
+- **Gizlilik:** ad, e-posta, telefon, adres ve bağlantılar gönderilmeden önce maskelenir, yanıt gelince geri yerleştirilir. Özellik varsayılan olarak kapalıdır ve her istekte açık onay istenir.
+- **Kesintisiz:** model yoğunsa beklemeden yedek modele geçilir; uyarlama birkaç saniye sürer.
+
+<img src="docs/ekran-goruntuleri/ilana-gore-uyarlama.webp" alt="Uyum skoru, eksik anahtar kelimeler, yapılan değişiklikler ve Ana CV ile uyarlanmış CV arasındaki fark" width="100%">
+
+### Tek sayfa PDF
+
+Düzenleyicinin yanında, PDF'in birebir aynısı olan canlı bir önizleme durur ve CV'nin tek A4 sayfaya sığıp sığmadığını yazdıkça söyler. Az taşan CV, PDF'te yazı ölçeği küçültülerek otomatik olarak tek sayfaya sığdırılır. Sayfa bütçesi, gerçek yazdırma çıktısı ölçülerek belirlendi.
+
+<img src="docs/ekran-goruntuleri/tek-sayfa-pdf.webp" alt="Markdown düzenleyici, canlı PDF önizlemesi ve 'Tek A4 sayfaya sığıyor' bilgisi" width="100%">
+
+### Başvuru takibi
+
+| Liste, arama ve filtreler                                                                                       | Kanban                                                                            |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| <img src="docs/ekran-goruntuleri/basvurular.webp" alt="Başvuru listesi, takip edilecekler ve sıradaki mülakat"> | <img src="docs/ekran-goruntuleri/kanban.webp" alt="Aşamalara göre Kanban panosu"> |
+
+- On bir aşamalı süreç (kaydedildi → başvuruldu → … → teklif); aşama değişiklikleri veritabanında otomatik olarak geçmişe yazılır.
+- Kanban'da sürükle-bırak ya da klavyeyle taşıma.
+- Mülakat, telefon, e-posta ve ödev kayıtları; yaklaşan mülakatlar takvim dosyası olarak dışa aktarılır.
+- Uzun süredir ses çıkmayan başvurular "takip et" olarak işaretlenir.
+
+<img src="docs/ekran-goruntuleri/basvuru-ayrintisi.webp" alt="Başvuru ayrıntısı ve aşama geçmişi" width="100%">
+
+### Pano
+
+Dönüş, mülakat ve teklif oranları; aşamalara göre dağılım, haftalık başvurular ve hangi CV versiyonunun ve hangi kaynağın daha çok dönüş aldığı, hepsi aşama geçmişinden hesaplanır.
+
+### Açık ve koyu tema, telefonda da
+
+| Koyu tema                                                                | Telefon                                                                             |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| <img src="docs/ekran-goruntuleri/pano-koyu.webp" alt="Koyu temada pano"> | <img src="docs/ekran-goruntuleri/mobil-pano.webp" alt="Telefonda pano" width="260"> |
+
+## Güvenlik ve gizlilik
+
+Kişisel veriyle (CV, maaş beklentisi, notlar) çalıştığı için güvenlik baştan tasarlandı; her kontrol [OWASP Top 10:2025](docs/requirements.md) maddelerine bağlı.
+
+- **Veri izolasyonu:** kullanıcıya ait her sorgu PostgreSQL **Row-Level Security** altında çalışır; uygulama kodunda bir hata olsa bile kimse başkasının kaydını göremez. Başkasının kaydına erişim her zaman `404` döner ve bu her uç nokta için test edilir.
+- **Kimlik doğrulama:** sunucu taraflı oturum, Argon2id parola özeti, TOTP ile iki adımlı doğrulama, yeni cihazda e-posta kodu, CSRF koruması.
+- **Şifreleme:** iki adımlı doğrulama sırları veritabanında AES-256-GCM ile şifreli durur; yedekler [age](https://age-encryption.org) ile şifrelenir ve ayda bir geri yükleme tatbikatı yapılır.
+- **Yalıtılmış CV okuma:** güvenilmeyen PDF'ler internete ve veritabanına erişimi olmayan, ayrı bir konteynerde (pdftotext + Tesseract OCR) okunur.
+- **KVKK:** tüm veri JSON ya da CSV olarak indirilebilir, hesap kalıcı olarak silinebilir; üçüncü taraf takipçi yoktur.
+- **Tedarik zinciri:** imajlar distroless/alpine, SBOM ile yayımlanır ve Sigstore cosign ile imzalanır.
+
+## Kalite
+
+Her değişiklik CI'da şu kapılardan geçer:
+
+| Kapı                          | Araç                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| Lint, tip kontrolü, format    | ESLint (security eklentisiyle, sıfır uyarı), `tsc --strict`, Prettier                 |
+| Birim ve entegrasyon testleri | Vitest; API testleri gerçek PostgreSQL ile (Testcontainers), **370+ test**            |
+| Uçtan uca ve erişilebilirlik  | Playwright + axe (WCAG 2.2 AA), 360 px mobil kontrolü, Lighthouse                     |
+| Güvenlik                      | Semgrep (SAST), Gitleaks, pnpm audit + OSV-Scanner, Trivy (imajlar), OWASP ZAP (DAST) |
+| Performans                    | k6 yük testi (1.000 başvuruyla API p95 < 200 ms), ilk yükleme JS bütçesi < 200 KB     |
+
+## Mimari
+
+```mermaid
+flowchart LR
+  B[Tarayıcı<br/>React 19 + Vite] -->|HTTPS| C[Caddy<br/>statik dosyalar, güvenlik başlıkları]
+  Y[Yer imi] -.->|ilan bilgileri| B
+  C -->|/api| A[API<br/>Fastify 5 + TypeScript]
+  A -->|RLS| D[(PostgreSQL 18)]
+  A -->|iç ağ| P[CV ayrıştırıcı<br/>pdftotext + Tesseract]
+  A -.->|maskelenmiş, onaylı| G[Gemini API]
+```
+
+- **Monorepo** (pnpm workspaces): `apps/api`, `apps/web`, `apps/cv-parser`, `packages/shared`.
+- İstemci ve sunucu aynı **Zod** şemalarını paylaşır; her istek iki tarafta da doğrulanır.
+- Katmanlı API: `routes → services → repositories`; şema değişiklikleri elle yazılmış SQL migration'larıyla.
+- Tüm kararlar [mimari karar kayıtlarında (ADR)](docs/adr/), gereksinimler [`docs/requirements.md`](docs/requirements.md) içinde.
+
+| Katman     | Teknolojiler                                                      |
+| ---------- | ----------------------------------------------------------------- |
+| Arayüz     | React 19, React Router 7, TanStack Query, Tailwind CSS 4, Vite    |
+| API        | Node.js 24, Fastify 5, Drizzle ORM, Zod 4, Argon2id               |
+| Veri       | PostgreSQL 18 (Row-Level Security)                                |
+| Yapay zekâ | Gemini API (sağlayıcı arayüzü arkasında; yerel model eklenebilir) |
+| Altyapı    | Docker Compose, Caddy, GitHub Actions                             |
+
+## Çalıştırma
 
 ```bash
-./scripts/init-env.sh          # .env içine rastgele parolalar ve anahtarlar üretir
-docker compose up --build
+./scripts/init-env.sh && docker compose up --build   # http://localhost:8080
 ```
 
-Uygulama: <http://localhost:8080> (127.0.0.1 değil, `localhost` kullanın; Origin kontrolü buna göre yapılır).
+Yapılandırma, yapay zekâ özelliğini açma, yedekleme ve geliştirme ortamı için: [**docs/kurulum.md**](docs/kurulum.md)
 
-İlk hesabınızı oluşturduktan sonra `.env` içinde `REGISTRATION_ENABLED=false` yapıp `docker compose up -d` ile yeniden başlatın.
+---
 
-### E-posta doğrulama kodları (FR-18, FR-19, ADR-0007)
+<div align="center">
 
-Kayıtta, yeni cihazdan girişte (TOTP kapalıysa) ve hesap silmede e-postaya 2 dakika geçerli bir kod gider.
+Ekran görüntülerindeki kişi, şirketler ve başvurular uydurmadır.
 
-- **Yerel (varsayılan):** Kodlar Mailpit test kutusuna düşer: <http://localhost:8025> (yalnızca bu makineden erişilir).
-- **Gmail ile gerçek gönderim:** Google hesabında 2 adımlı doğrulamayı açın, _Güvenlik › Uygulama şifreleri_ bölümünden bir uygulama şifresi oluşturun ve `.env` dosyasına ekleyin:
+Geliştiren: [Berra Salar](https://github.com/berraslar)
 
-  ```bash
-  SMTP_HOST=smtp.gmail.com
-  SMTP_PORT=465
-  SMTP_SECURE=true
-  SMTP_USER=adiniz@gmail.com
-  SMTP_PASSWORD=uygulama-sifresi   # 16 karakter, boşluksuz
-  MAIL_FROM=JobTrack <adiniz@gmail.com>
-  ```
-
-  Ardından `docker compose up -d` ile yeniden başlatın.
-
-### Parola sıfırlama
-
-E-posta ile sıfırlama yoktur (ADR-0003). Sunucuda:
-
-```bash
-docker compose run --rm -it migrate dist/cli/reset-password.js eposta@ornek.com
-```
-
-Komut yeni parolayı sorar, bütün oturumları kapatır ve denetim kaydı yazar.
-
-### İlan sayfasından kaydetme (FR-22, ADR-0009)
-
-LinkedIn, Kariyer.net, Youthall ya da bir şirketin kariyer sayfasındaki bir ilandayken tek tıkla JobTrack'te yeni başvuru formunu ilan bilgileri ve ilan metniyle dolu açan bir yer imi (bookmarklet). Yer imi yalnızca açık sayfayı okur; hiçbir yere veri göndermez ve kendiliğinden kaydetmez.
-
-1. Tarayıcının yer imi çubuğunu açın (Chrome/Edge: `Ctrl+Shift+B`, Firefox: Görünüm > Araç çubukları > Yer imleri araç çubuğu).
-2. JobTrack'te **Ayarlar > İlan sayfasından kaydet** bölümüne gidin.
-3. **JobTrack'e kaydet** bağlantısını sürükleyip yer imi çubuğuna bırakın.
-   Sürükleyemiyorsanız **Yer imi kodunu kopyala**'ya basın, tarayıcıda yeni bir yer imi oluşturun ve kopyalanan kodu adres (URL) alanına yapıştırın.
-4. Bir ilan açın (LinkedIn'de `/jobs/view/…` ya da ilan listesinde seçili ilan; Kariyer.net'te `/is-ilani/…`; Youthall'da ilanın kendi sayfası; ya da şirketin kariyer sayfasındaki ilan) ve yer imine tıklayın.
-5. JobTrack yeni sekmede **Yeni başvuru** formunu açar: pozisyon, şirket, konum, temiz ilan bağlantısı, kaynak, bugünün tarihi ve **İlan metni** doludur. Kontrol edip **Başvuruyu kaydet**'e basın; ilan metni başvuruyla birlikte kaydedilir ve CV Düzenle'de uyarlamada kullanılır.
-
-Notlar:
-
-- Yer imi JobTrack'in adresini içerir; adres değişirse (örn. alan adına taşıma) bağlantıyı Ayarlar'dan yeniden sürükleyin.
-- Okuma sırası: LinkedIn ve Kariyer.net için sayfaya özel alanlar; Youthall ve çoğu şirket kariyer sayfası (Greenhouse, Lever, Workday gibi) için sayfadaki schema.org `JobPosting` verisi; bunlar yoksa sayfa başlığı ve adresi. Bazı şirket sayfalarında yalnızca başlık ve bağlantı alınabilir; eksik alanı elle doldurursunuz.
-- Parametreler doğrulanır: uzunluklar sınırlıdır, ilan bağlantısı yalnızca `https://` olabilir; izleme parametreleri (`utm_*`, `gclid` vb.) atılır, LinkedIn bağlantısı kanonik ilan adresine çevrilir. Geçmeyen alan forma girmez ve formun üstünde belirtilir.
-- İlan metni (en fazla 20.000 karakter) sorgu dizesinde değil adres parçasında (`#ilan=`) taşınır: sunucuya gönderilmez, erişim loglarına girmez ve form açılınca adresten silinir.
-- Kaynak kodu: `apps/web/bookmarklet/save-job.js`. Değiştirdikten sonra küçültülmüş sürümü yeniden üretin: `corepack pnpm --filter @jobtrack/web build:bookmarklet` (bir test, üretilen dosyanın güncel olduğunu denetler).
-
-### Yapay zekâ ile CV uyarlama (FR-23, FR-24, ADR-0010)
-
-**CV Düzenle** sayfasında Ana CV'nizi (Markdown) bir kez kaydeder, bir başvuru seçip ilan metnini yapıştırırsınız. Yapay zekâ CV'nizi ilana göre yeniden sıralar ve ifade eder; olmayan deneyim, beceri, sertifika ya da tarih eklemez. Sonuç Ana CV ile yan yana fark olarak gösterilir, düzenleyip başvuruya bağlı bir sürüm olarak kaydedersiniz; sürümler Markdown olarak indirilir ya da yazdırma penceresinden PDF olarak kaydedilir.
-
-Özellik **varsayılan olarak kapalıdır**. Kapalıyken Ana CV, ilan metni ve elle düzenlenen sürümler yine kullanılabilir.
-
-> **Gizlilik:** Açarsanız maskelenmiş CV'niz ve ilan metni Google'a (Gemini API) gönderilir. Ad, e-posta, telefon, adres ve bağlantılar gönderilmeden önce yer tutucularla değiştirilir; ama deneyim ve proje metinleri gider. Ücretsiz katmanda Google gönderilen içeriği ve yanıtları ürünlerini geliştirmek için kullanabilir ve insan inceleyiciler okuyabilir ([Gemini API ek koşulları](https://ai.google.dev/gemini-api/terms)). Her uyarlamada ayrıca açık onay istenir.
-
-**Gemini API anahtarı alma (ücretsiz):**
-
-1. [Google AI Studio](https://aistudio.google.com/) adresine Google hesabınızla girin ve kullanım koşullarını kabul edin.
-2. Sol menüden **Get API key** (API anahtarı al) sayfasını açın ya da doğrudan <https://aistudio.google.com/app/apikey> adresine gidin.
-3. **Create API key** (API anahtarı oluştur) düğmesine basın; bir Google Cloud projesi seçin ya da AI Studio'nun yeni proje oluşturmasına izin verin.
-4. Oluşan anahtarı kopyalayın. Anahtarı kimseyle paylaşmayın, koda ya da depoya yazmayın.
-5. Ücretsiz katmanın güncel hız sınırlarını AI Studio'da görebilirsiniz; sınır aşılırsa JobTrack birkaç kez bekleyip yeniden dener, olmazsa "birkaç dakika sonra tekrar deneyin" der.
-
-**Özelliği açma:** `.env` dosyasına (depoya girmez, `.gitignore` içinde) şunları yazın ve API'yi yeniden başlatın:
-
-```bash
-AI_PROVIDER=gemini
-GEMINI_API_KEY=buraya-anahtar
-# İsteğe bağlı; varsayılan 2026-10-14'te doğrulanan ücretsiz Flash modeli:
-GEMINI_MODEL=gemini-3.8-flash
-```
-
-```bash
-docker compose up -d api
-```
-
-Anahtar yalnızca API konteynerinde durur; tarayıcıya hiçbir yanıtla gitmez ve loglanmaz. Google bir modeli kapatırsa uygulama "model bulunamadı" der; [modeller sayfasından](https://ai.google.dev/gemini-api/docs/models) güncel bir Flash modelini `GEMINI_MODEL` olarak yazın. Kapatmak için `AI_PROVIDER=` satırını boşaltın.
-
-## Geliştirme
-
-Gereksinim: Node.js 24 LTS (`.nvmrc`), pnpm (`corepack enable`).
-
-```bash
-pnpm install
-pnpm --filter @jobtrack/api dev    # API: http://localhost:3000
-pnpm --filter @jobtrack/web dev    # Arayüz: http://localhost:5173 (/api → 3000)
-```
-
-| Komut               | Açıklama                                                                                                                                                                                                        |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm lint`         | ESLint (eslint-plugin-security dahil), uyarı sıfır olmalı                                                                                                                                                       |
-| `pnpm format:check` | Prettier                                                                                                                                                                                                        |
-| `pnpm typecheck`    | `tsc --noEmit`, tüm paketler                                                                                                                                                                                    |
-| `pnpm test`         | Vitest, tüm paketler                                                                                                                                                                                            |
-| `pnpm build`        | Üretim build'i                                                                                                                                                                                                  |
-| `pnpm check:bundle` | İlk yüklemedeki JavaScript gzip ile 200 KB altında mı (NFR-05)                                                                                                                                                  |
-| `pnpm test:e2e`     | Playwright uçtan uca testleri + axe (WCAG 2.2 AA) + 360 px kontrolü. Kendi veritabanıyla geçici bir Docker ortamı açar (port 8081), bitince siler; asıl verilere dokunmaz. Sistemdeki Google Chrome'u kullanır. |
-
-## API
-
-Tüm uçlar `/api` altındadır. Belirtilmedikçe oturum ister; durum değiştiren isteklerde `X-CSRF-Token` başlığı zorunludur (değer `GET /api/auth/me` yanıtında). Başka kullanıcının kaydı ve geçersiz ID her zaman `404` döner.
-
-| Uç nokta                                                                                                                       | Açıklama                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `POST /auth/register`, `POST /auth/login`, `POST /auth/mfa/verify`                                                             | Kayıt, giriş, ikinci adım (herkese açık / yarım oturum)                                                   |
-| `POST /auth/email/verify`, `POST /auth/email/resend`                                                                           | E-posta kodu adımı ve yeni kod (yarım oturum; FR-18, FR-19)                                               |
-| `GET /auth/me`, `POST /auth/logout`                                                                                            | Oturum bilgisi ve CSRF token'ı, çıkış                                                                     |
-| `GET /auth/sessions`, `DELETE /auth/sessions`                                                                                  | Aktif oturumlar, tümünü kapat (FR-03)                                                                     |
-| `POST /auth/mfa/setup`, `POST /auth/mfa/enable`                                                                                | TOTP kurulumu (FR-02)                                                                                     |
-| `GET/POST /companies`, `GET/PATCH/DELETE /companies/:id`                                                                       | Şirketler; detay tüm başvuruları içerir (FR-13)                                                           |
-| `GET/POST /cv-versions`, `PATCH/DELETE /cv-versions/:id`                                                                       | CV versiyonları (FR-08)                                                                                   |
-| `POST /cv-versions/upload`, `PUT/GET/DELETE /cv-versions/:id/file`                                                             | CV PDF dosyası; ham `application/pdf` gövdesi, en fazla 5 MB (FR-08, ADR-0006)                            |
-| `GET/PUT/DELETE /profile`                                                                                                      | Profil; `PUT` bütün profili yazar (FR-20)                                                                 |
-| `POST /profile/extract`                                                                                                        | `{ cvVersionId }` ile CV dosyasından profil önerisi; hiçbir şey kaydetmez (FR-21, ADR-0008)               |
-| `GET /applications?q=…&stage=…&source=…&cvVersionId=…&appliedFrom=…&appliedTo=…&followUp=true&archived=exclude\|include\|only` | Liste, arama ve filtreler (FR-10); her başvuruda `needsFollowUp` (FR-11)                                  |
-| `GET/PATCH /settings`                                                                                                          | Takip süresi (FR-11) ve arayüz dili `tr`/`en` (FR-16); kısmi güncelleme                                   |
-| `GET /stats`                                                                                                                   | Pano: aşama dağılımı, dönüş/mülakat/teklif hunisi, CV ve kaynak kırılımı, haftalık başvuru (FR-12)        |
-| `GET /account/export?format=json\|csv`                                                                                         | Tüm verinin dışa aktarımı (FR-14)                                                                         |
-| `POST /account/deletion-code`, `DELETE /account`                                                                               | Silme onay kodu; hesabı silme: parola, `confirm: "SİL"`, `emailCode` ve MFA açıksa kod (FR-14)            |
-| `GET /account/calendar.ics`                                                                                                    | Yaklaşan mülakatlar takvim dosyası (FR-17)                                                                |
-| `POST /vitals`                                                                                                                 | Gerçek kullanıcı Core Web Vitals ölçümü (herkese açık, NFR-03)                                            |
-| `POST /applications`, `GET/PATCH/DELETE /applications/:id`                                                                     | Başvuru; zorunlu alanlar yalnızca şirket ve pozisyon (FR-04, NFR-09)                                      |
-| `POST /applications/:id/stage`                                                                                                 | Aşama değişikliği; geçmiş otomatik yazılır (FR-05, FR-06)                                                 |
-| `POST /applications/:id/archive`, `POST /applications/:id/unarchive`                                                           | Arşiv (FR-15)                                                                                             |
-| `POST /applications/:id/activities`, `PATCH/DELETE /activities/:id`                                                            | Mülakat, e-posta, telefon, ödev kayıtları (FR-07)                                                         |
-| `GET/PUT /master-cv`                                                                                                           | Ana CV, Markdown, en fazla 30.000 karakter (FR-23)                                                        |
-| `POST /master-cv/import`                                                                                                       | PDF CV'den Ana CV taslağı; dosya saklanmaz, kaydetmez, dakikada 6 istek (FR-23, ADR-0008)                 |
-| `GET/PUT /applications/:id/job-description`                                                                                    | Başvurunun ilan metni, en fazla 20.000 karakter (FR-23)                                                   |
-| `GET /ai/status`                                                                                                               | Yapay zekâ özelliği açık mı (ADR-0010)                                                                    |
-| `POST /applications/:id/tailor`                                                                                                | `{ consent: true, extraMaskTerms? }` ile uyarlama taslağı; kaydetmez; kullanıcı başına dakikada 5 (FR-24) |
-| `GET/POST /applications/:id/tailored-cvs`, `GET/PUT/DELETE /tailored-cvs/:id`                                                  | Başvuruya bağlı CV sürümleri (FR-24)                                                                      |
-
-## Operasyon
-
-### Şifreli yedekleme (NFR-11)
-
-Yedekler [age](https://age-encryption.org) ile açık anahtara şifrelenir. Sunucuda yalnızca açık anahtar bulunur; yedeği açacak özel anahtar sunucu dışında saklanır.
-
-```bash
-./scripts/backup-keygen.sh            # bir kez: anahtar çifti üretir, açık anahtarı gösterir
-# Çıktıdaki BACKUP_AGE_RECIPIENT=... satırını .env'e ekleyin; backup-key.txt'yi sunucudan kaldırıp güvenli bir yere taşıyın.
-./scripts/backup.sh                   # yedek: backups/jobtrack-<zaman>.dump.age (30 günden eskiler silinir)
-```
-
-Her gün 03:00'te otomatik yedek için crontab satırı:
-
-```cron
-0 3 * * * cd /yol/JobTrack && ./scripts/backup.sh >> backups/backup.log 2>&1
-```
-
-**Silinen hesaplar ve yedekler (KVKK, FR-14, NFR-14):** Hesap silme, verinin tamamını canlı veritabanından hemen siler. O ana kadar alınmış şifreli yedeklerde ise veri, yedeğin saklama süresi dolana kadar kalır. Bu süre **en fazla 30 gündür** ve gizlilik bildiriminde kullanıcıya açıkça belirtilmelidir. Bir yedek geri yüklenirse, yedekten sonra silinmiş hesaplar geri yüklemenin ardından yeniden silinmelidir.
-
-**Geri yükleme tatbikatı (ayda bir):** Yedeği geçici, ağa kapalı bir veritabanına geri yükler, tutarlılık kontrollerini yapar ve siler.
-
-```bash
-./scripts/restore-drill.sh backups/jobtrack-<zaman>.dump.age /guvenli/yer/backup-key.txt
-```
-
-### Güvenlik ve performans testleri
-
-| Komut                                                                                      | Ne yapar                                                                                                                                |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `./scripts/zap-baseline.sh`                                                                | OWASP ZAP baseline (DAST); orta veya yüksek bulguda başarısız olur. Rapor `zap-report/` dizinine yazılır. CI'da `main` dalında çalışır. |
-| `./scripts/load-test.sh`                                                                   | k6: 1.000 başvuruyla API p95 < 200 ms (NFR-04). CI'da haftalık çalışır.                                                                 |
-| `./scripts/with-test-stack.sh pnpm dlx @lhci/cli@0.15.1 autorun --config=lighthouserc.cjs` | Lighthouse CI (NFR-03, laboratuvar ölçümü)                                                                                              |
-
-Hepsi yalıtılmış, geçici bir Docker ortamında çalışır; asıl verilere dokunmaz. Gerçek kullanıcıların Core Web Vitals ölçümleri (LCP, INP, CLS) `web-vitals` ile toplanıp API loglarına `web-vitals` mesajıyla yazılır.
-
-### Dağıtım ve imza doğrulama (A03, A08)
-
-`main` dalında CI yeşil olunca `release` iş akışı imajları `ghcr.io/<kullanıcı>/<depo>-{api,web,backup}` adlarıyla yayımlar. Her imaja bir CycloneDX SBOM eklenir ve imaj Sigstore cosign ile anahtarsız olarak imzalanır. Sunucuda yalnızca imzası doğrulanan imajı çalıştırın:
-
-```bash
-cosign verify ghcr.io/<kullanıcı>/<depo>-api:<commit> \
-  --certificate-identity-regexp 'https://github.com/<kullanıcı>/<depo>/.github/workflows/release.yml@.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-## Yapı
-
-```
-apps/api         Fastify + TypeScript REST API (/api)
-apps/web         React + Vite arayüz
-apps/cv-parser   Yalıtılmış CV metin çıkarıcı: pdftotext + Tesseract OCR (ADR-0008)
-packages/shared  Ortak Zod şemaları ve tipler
-infra/caddy      Ters vekil ve güvenlik başlıkları
-infra/postgres   Veritabanı rolleri (ilk kurulum)
-apps/api/migrations  Şema, RLS politikaları (SQL)
-docs/            Gereksinimler ve ADR'ler
-```
+</div>

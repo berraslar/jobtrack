@@ -21,8 +21,8 @@ import {
 import { useI18n } from '../i18n';
 
 // Oturumsuz ziyaretçinin ana sayfası. İllüstrasyon yerine uygulamanın kendisi: uydurma verili,
-// kendi kendine işleyen küçük bir pano. Uydurma rakam, kullanıcı yorumu ya da logo yoktur
-// (PRODUCT.md); örnek veri açıkça "uydurma" diye etiketlenir.
+// kendi kendine işleyen küçük bir pano. Uydurma rakam, kullanıcı yorumu ya da logo yoktur;
+// örnek veri açıkça "uydurma" diye etiketlenir.
 
 const SHELL = 'mx-auto w-full max-w-[76rem] px-4 sm:px-8 lg:px-12';
 

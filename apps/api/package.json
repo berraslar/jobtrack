@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
-    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/rate-limit": "^11.2.1",
     "@jobtrack/shared": "workspace:*",
     "@node-rs/argon2": "~2.2.1",
     "drizzle-orm": "^0.45.3",

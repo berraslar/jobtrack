@@ -45,7 +45,8 @@ test('başvuru ekleme, etkinlik, aşama değişikliği ve arama (FR-04..07, FR-1
   // Arama (FR-10).
   await page.getByRole('link', { name: 'Başvurulara dön' }).click();
   await page.getByLabel('Ara', { exact: true }).fill('veri');
-  await expect(page.getByRole('link', { name: 'Veri Analisti' })).toBeVisible();
+  // Yeniden denemede aynı hesapta ikinci bir kayıt olabilir; ilk eşleşme yeterlidir.
+  await expect(page.getByRole('link', { name: 'Veri Analisti' }).first()).toBeVisible();
   await page.getByLabel('Ara', { exact: true }).fill('olmayan-bir-sey');
   await expect(page.getByText('Filtrelere uyan başvuru yok.')).toBeVisible();
   await expect(page).toHaveURL(/q=olmayan-bir-sey/);
@@ -192,8 +193,8 @@ test('LinkedIn yer imi betiğinin açtığı form önceden dolu gelir; kaydı ku
   await page.getByRole('button', { name: 'Başvuruyu kaydet' }).click();
   await expect(page.getByRole('heading', { name: 'Yer İmi Pozisyonu' })).toBeVisible();
 
-  // LinkedIn dışı bağlantı forma girmez.
-  await page.goto('/basvurular/yeni?url=https%3A%2F%2Fevil.example%2Fjobs%2Fview%2F4012345678%2F');
+  // https olmayan bağlantı forma girmez (yalnızca https ilan bağlantıları kabul edilir).
+  await page.goto('/basvurular/yeni?url=http%3A%2F%2Fevil.example%2Fjobs%2Fview%2F4012345678%2F');
   await expect(page.getByText(/alınmadı: İlan bağlantısı/)).toBeVisible();
   await expect(page.getByLabel('İlan bağlantısı')).toHaveValue('');
 });

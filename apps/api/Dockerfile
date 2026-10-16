@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Derleme: tüm workspace kurulur, API ve shared derlenir, yalnızca üretim bağımlılıkları ayrılır.
-FROM node:24-slim AS build
+FROM node:25-slim AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /repo

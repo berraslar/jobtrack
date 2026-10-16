@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Tedarik zinciri (A03): yeni yayımlanan sürümleri 1 gün bekle, kurulum betiklerini yalnızca izin verilenlerde çalıştır.
+minimumReleaseAge: 1440
+onlyBuiltDependencies:
+  - esbuild

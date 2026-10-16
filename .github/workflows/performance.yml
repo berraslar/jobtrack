@@ -1,0 +1,21 @@
+name: Performans
+
+# NFR-04: 1.000 başvuruyla API p95 < 200 ms (k6). Haftalık ve elle tetiklenebilir.
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  k6:
+    name: k6 gecikme testi
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./scripts/load-test.sh

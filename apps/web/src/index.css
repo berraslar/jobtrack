@@ -1,0 +1,511 @@
+@import 'tailwindcss';
+/* Yazı tipleri kendi sunucumuzdan (OFL); CSP font-src 'self' (A02). */
+/* Başlıklar: Bricolage Grotesque; arayüz ve metin: Figtree. İkisi de Türkçe karakterleri kapsar. */
+@import '@fontsource-variable/bricolage-grotesque/index.css';
+@import '@fontsource-variable/figtree/index.css';
+
+/*
+ * Görsel dünya: güneşli pastel atölye (DESIGN.md). Şeftali, lila ve gök mavisi ışık lekeleri
+ * zeminde yavaşça süzülür; içerik yuvarlak köşeli beyaz yapraklarda durur. Birincil eylem tereyağı
+ * sarısı haptır. Her aşamanın sabit bir pastel tonu vardır ve renk hiçbir zaman tek başına bilgi
+ * taşımaz: her ton aşama adıyla birlikte görünür. Kontrastlar WCAG AA için ölçüldü (NFR-06).
+ */
+@theme {
+  --font-sans: 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, sans-serif;
+
+  /* Zeminler: sayfa, beyaz yaprak, lila gölgeli satır. */
+  --color-canvas: #fdf8f6;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f7f4fb;
+  /* Patlıcan mürekkebi ve yumuşak çizgiler. */
+  --color-ink: #2a2140;
+  --color-ink-muted: #635a78;
+  --color-line: #ece6f3;
+  --color-line-strong: #d9d0e8;
+  /* Form alanı kenarı: arka plana karşı en az 3:1 (WCAG 1.4.11). */
+  --color-control: #8a80a0;
+  /* Birincil eylem: tereyağı sarısı, üstünde mürekkep. */
+  --color-brand: #ffd23f;
+  --color-brand-strong: #ffc61a;
+  --color-on-brand: #2a2140;
+  /* "Bununla ilgilen": takip bayrağı. */
+  --color-signal: #b3361f;
+  /* Klavye odağı. */
+  --color-focus: #6d5ce8;
+  /* Durumlar (her zaman metinle birlikte, yalnız renkle değil). */
+  --color-danger: #c0263f;
+  --color-warning: #8a5a00;
+  --color-success: #1f7a4d;
+  /* Grafik. */
+  --color-series-1: #8b7cf6;
+  --color-grid: #efeaf5;
+
+  /* Aşama aileleri: açık dolgu (rozet, sütun başlığı) ve dolu ton (yol, çubuk, nokta). */
+  --color-sky: #dff0ff;
+  --color-sky-solid: #5aa9e6;
+  --color-lilac: #ebe5ff;
+  --color-lilac-solid: #8b7cf6;
+  --color-peach: #ffe6da;
+  --color-peach-solid: #f4895f;
+  --color-butter: #fff3c4;
+  --color-butter-solid: #eeb300;
+  --color-mint: #dcf5e8;
+  --color-mint-solid: #3fb67f;
+  --color-rose: #ffe0e6;
+  --color-rose-solid: #e5597a;
+  --color-mist: #eeecf3;
+  --color-mist-solid: #a49cb5;
+
+  /* Zemin ışıkları. */
+  --color-glow-peach: #ffd9c7;
+  --color-glow-lilac: #dcd3ff;
+  --color-glow-sky: #c9e8ff;
+
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Uzun, yumuşak, mürekkep tonlu gölgeler. */
+  --shadow-soft: 0 1px 2px rgb(42 33 64 / 0.05), 0 8px 24px -12px rgb(42 33 64 / 0.16);
+  --shadow-lift: 0 2px 4px rgb(42 33 64 / 0.06), 0 20px 40px -16px rgb(42 33 64 / 0.28);
+  --shadow-sheet: 0 1px 2px rgb(42 33 64 / 0.04), 0 30px 60px -30px rgb(42 33 64 / 0.22);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Koyu tema: erik gecesi; ışık lekeleri kısılır. Pastel zeminler, dolu tonun erik yüzeyle
+   karışımıdır; kararıp kahverengiye ya da koyu yeşile dönmez. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-canvas: #16121f;
+    --color-surface: #201a2c;
+    --color-surface-muted: #2a2338;
+    --color-ink: #f4effc;
+    --color-ink-muted: #b9b0cc;
+    --color-line: #352d45;
+    --color-line-strong: #4a4060;
+    --color-control: #7d7394;
+    --color-brand: #ffd54d;
+    --color-brand-strong: #ffe07a;
+    --color-on-brand: #241c33;
+    --color-signal: #ff9b85;
+    --color-focus: #b2a6ff;
+    --color-danger: #ff8597;
+    --color-warning: #f5c44e;
+    --color-success: #6fdca4;
+    --color-series-1: #b2a6ff;
+    --color-grid: #2f2840;
+    --color-sky: color-mix(in oklab, #8cc8f5 24%, #201a2c);
+    --color-sky-solid: #8cc8f5;
+    --color-lilac: color-mix(in oklab, #b2a6ff 24%, #201a2c);
+    --color-lilac-solid: #b2a6ff;
+    --color-peach: color-mix(in oklab, #ffab88 24%, #201a2c);
+    --color-peach-solid: #ffab88;
+    /* Sarı, erik yüzeyle karışınca toprak rengine döner; loş altın elle seçildi. */
+    --color-butter: #493f1d;
+    --color-butter-solid: #ffd54d;
+    --color-mint: color-mix(in oklab, #74d9a6 24%, #201a2c);
+    --color-mint-solid: #74d9a6;
+    --color-rose: color-mix(in oklab, #ff8ea6 24%, #201a2c);
+    --color-rose-solid: #ff8ea6;
+    --color-mist: color-mix(in oklab, #8f87a3 14%, #201a2c);
+    --color-mist-solid: #8f87a3;
+    --color-glow-peach: #4a2a35;
+    --color-glow-lilac: #34285c;
+    --color-glow-sky: #1d3550;
+    --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 20px 40px -16px rgb(0 0 0 / 0.7);
+    --shadow-sheet: 0 1px 2px rgb(0 0 0 / 0.3), 0 30px 60px -30px rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-canvas: #16121f;
+  --color-surface: #201a2c;
+  --color-surface-muted: #2a2338;
+  --color-ink: #f4effc;
+  --color-ink-muted: #b9b0cc;
+  --color-line: #352d45;
+  --color-line-strong: #4a4060;
+  --color-control: #7d7394;
+  --color-brand: #ffd54d;
+  --color-brand-strong: #ffe07a;
+  --color-on-brand: #241c33;
+  --color-signal: #ff9b85;
+  --color-focus: #b2a6ff;
+  --color-danger: #ff8597;
+  --color-warning: #f5c44e;
+  --color-success: #6fdca4;
+  --color-series-1: #b2a6ff;
+  --color-grid: #2f2840;
+  --color-sky: color-mix(in oklab, #8cc8f5 24%, #201a2c);
+  --color-sky-solid: #8cc8f5;
+  --color-lilac: color-mix(in oklab, #b2a6ff 24%, #201a2c);
+  --color-lilac-solid: #b2a6ff;
+  --color-peach: color-mix(in oklab, #ffab88 24%, #201a2c);
+  --color-peach-solid: #ffab88;
+  /* Sarı, erik yüzeyle karışınca toprak rengine döner; loş altın elle seçildi. */
+  --color-butter: #493f1d;
+  --color-butter-solid: #ffd54d;
+  --color-mint: color-mix(in oklab, #74d9a6 24%, #201a2c);
+  --color-mint-solid: #74d9a6;
+  --color-rose: color-mix(in oklab, #ff8ea6 24%, #201a2c);
+  --color-rose-solid: #ff8ea6;
+  --color-mist: color-mix(in oklab, #8f87a3 14%, #201a2c);
+  --color-mist-solid: #8f87a3;
+  --color-glow-peach: #4a2a35;
+  --color-glow-lilac: #34285c;
+  --color-glow-sky: #1d3550;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 20px 40px -16px rgb(0 0 0 / 0.7);
+  --shadow-sheet: 0 1px 2px rgb(0 0 0 / 0.3), 0 30px 60px -30px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  caret-color: var(--color-focus);
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-lilac-solid) 30%, transparent);
+  color: var(--color-ink);
+}
+
+a {
+  text-underline-offset: 0.22em;
+  text-decoration-thickness: 1.5px;
+}
+
+/* Klavye odağı her yerde aynı: lila, ofsetli çizgi. */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/*
+ * Zemin ışıkları: üç büyük, yumuşak leke sayfanın arkasında yavaşça süzülür. Yalnızca transform
+ * canlandırılır; azaltılmış hareket tercihinde durur.
+ */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--color-canvas);
+}
+
+.aurora > span {
+  position: absolute;
+  width: 62vmax;
+  height: 62vmax;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.aurora > span:nth-child(1) {
+  top: -24vmax;
+  left: -16vmax;
+  background: radial-gradient(closest-side, var(--color-glow-peach), transparent);
+  animation: drift-a 38s ease-in-out infinite alternate;
+}
+
+.aurora > span:nth-child(2) {
+  top: -10vmax;
+  right: -22vmax;
+  background: radial-gradient(closest-side, var(--color-glow-lilac), transparent);
+  animation: drift-b 46s ease-in-out infinite alternate;
+}
+
+.aurora > span:nth-child(3) {
+  bottom: -30vmax;
+  left: 18vmax;
+  background: radial-gradient(closest-side, var(--color-glow-sky), transparent);
+  animation: drift-c 52s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  to {
+    transform: translate3d(14vmax, 10vmax, 0) scale(1.12);
+  }
+}
+
+@keyframes drift-b {
+  to {
+    transform: translate3d(-12vmax, 16vmax, 0) scale(0.9);
+  }
+}
+
+@keyframes drift-c {
+  to {
+    transform: translate3d(-10vmax, -14vmax, 0) scale(1.18);
+  }
+}
+
+/*
+ * Sayfa geçişi (View Transitions): içerik yaprağı hafifçe yükselerek gelir, etkin
+ * menü hapı yeni öğeye kayar.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(page) {
+  animation: 160ms ease-in both page-out;
+}
+
+::view-transition-new(page) {
+  animation: 420ms var(--ease-out-expo) both page-in;
+}
+
+::view-transition-group(nav-pill) {
+  animation-duration: 380ms;
+  animation-timing-function: var(--ease-out-expo);
+}
+
+.vt-page {
+  view-transition-name: page;
+}
+
+.vt-nav-pill {
+  view-transition-name: nav-pill;
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/*
+ * İlk boyamada liste öğeleri sırayla yükselir (gecikme --i ile, en fazla ~10 öğe). Opaklık
+ * değişmez; içerik baştan görünür, yalnızca konum canlanır.
+ */
+.rise {
+  animation: rise 560ms var(--ease-out-expo) backwards;
+  animation-delay: calc(min(var(--i, 0), 10) * 45ms);
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(12px);
+  }
+}
+
+/*
+ * Kaydırınca beliren bölümler (yalnızca destekleyen tarayıcılarda, kaydırma zaman çizelgesiyle).
+ * Desteklenmezse içerik olduğu gibi görünür; opaklık değişmez.
+ */
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 70%;
+  }
+}
+
+@keyframes reveal {
+  from {
+    transform: translateY(36px) scale(0.98);
+  }
+}
+
+/* Kanban kartı yeni sütuna konunca hafifçe oturur. */
+.land {
+  animation: land 420ms var(--ease-out-expo) backwards;
+}
+
+@keyframes land {
+  from {
+    transform: scale(0.94) translateY(-6px);
+  }
+}
+
+/* Pano çubukları soldan, sütunlar alttan dolar. */
+.grow-x {
+  transform-origin: left center;
+  animation: grow-x 900ms var(--ease-out-expo) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 50ms);
+}
+
+.grow-y {
+  transform-origin: center bottom;
+  animation: grow-y 900ms var(--ease-out-expo) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 30ms);
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* Tanıtım panosundaki kartın süzülmesi. */
+.float {
+  animation: float 7s ease-in-out infinite alternate;
+}
+
+@keyframes float {
+  to {
+    transform: translateY(-10px) rotate(-0.6deg);
+  }
+}
+
+/*
+ * FR-24: CV'nin yazdırma görünümü (tarayıcıda "PDF olarak kaydet"). Yazdırırken yalnızca
+ * .print-area görünür; ekrandaki uygulama ve zemin ışıkları gizlenir.
+ */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  body {
+    background: #ffffff;
+    color: #111111;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .aurora {
+    display: none !important;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+
+  .print-area {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+  }
+}
+
+/*
+ * FR-23, FR-24: CV'nin PDF biçimi. Bütün ölçüler em cinsindendir; --cv-scale tek sayfaya sığdırmak
+ * için yazıyı (ve boşlukları) birlikte küçültür (lib/one-page.ts). 1 em = 10.5 pt.
+ */
+.cv-print {
+  font-family: var(--font-sans);
+  font-size: calc(10.5pt * var(--cv-scale, 1));
+  line-height: 1.45;
+  color: #111111;
+}
+
+/* Ölçüm kopyası: ekran dışında, yazdırma alanıyla aynı genişlikte (lib/one-page.ts). */
+.cv-measure {
+  position: absolute;
+  top: 0;
+  left: -10000px;
+  width: 182mm;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media print {
+  .cv-measure {
+    display: none !important;
+  }
+}
+
+.cv-print h1 {
+  margin: 0 0 0.2em;
+  font-size: 1.905em;
+  letter-spacing: -0.02em;
+}
+
+.cv-print h2 {
+  margin: 1.12em 0 0.48em;
+  padding-bottom: 0.24em;
+  border-bottom: 1px solid #cccccc;
+  font-size: 1.19em;
+}
+
+.cv-print h3 {
+  margin: 0.727em 0 0.182em;
+  font-size: 1.048em;
+}
+
+.cv-print p {
+  margin: 0 0 0.571em;
+}
+
+.cv-print ul {
+  margin: 0 0 0.571em;
+  padding-left: 1.333em;
+  list-style: disc;
+}
+
+.cv-print h2,
+.cv-print h3 {
+  break-after: avoid;
+}
+
+.cv-print li {
+  break-inside: avoid;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .aurora > span {
+    animation: none;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

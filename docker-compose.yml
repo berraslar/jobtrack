@@ -1,0 +1,204 @@
+name: jobtrack
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+
+x-api-build: &api-build
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+  image: jobtrack-api
+
+services:
+  db:
+    <<: *hardening
+    image: postgres:18-alpine
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_DB: jobtrack
+      POSTGRES_USER: jobtrack_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env eksik — ./scripts/init-env.sh çalıştırın}
+      # Rol parolaları yalnızca ilk kurulumda init.sh tarafından kullanılır.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
+      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD:?}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+      - ./infra/postgres/bootstrap.sql:/bootstrap/bootstrap.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U jobtrack_admin -d jobtrack']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Port dışarı açılmaz; yalnızca iç ağdan erişilir.
+    networks: [backend]
+
+  # Şema migration'ları: API'den önce bir kez çalışır ve çıkar.
+  migrate:
+    <<: [*hardening, *api-build]
+    restart: 'no'
+    read_only: true
+    command: ['dist/db/migrate.js']
+    environment:
+      MIGRATION_DATABASE_URL: postgres://jobtrack_migrator:${MIGRATOR_DB_PASSWORD}@db:5432/jobtrack
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+
+  api:
+    <<: [*hardening, *api-build]
+    read_only: true
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://jobtrack_app:${APP_DB_PASSWORD}@db:5432/jobtrack
+      APP_ORIGIN: ${APP_ORIGIN:?}
+      APP_SECRET: ${APP_SECRET:?}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      HIBP_ENABLED: ${HIBP_ENABLED:-true}
+      # ADR-0007: doğrulama kodları. Varsayılan yerel Mailpit; Gmail için .env'e SMTP_* yazın.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-JobTrack <no-reply@jobtrack.local>}
+      # ADR-0008: "CV'den doldur" için iç ağdaki ayrıştırıcı.
+      CV_PARSER_URL: http://cv-parser:8090
+      # ADR-0010: yapay zekâ ile CV uyarlama. Varsayılan kapalı; açmak için .env'e
+      # AI_PROVIDER=gemini ve GEMINI_API_KEY yazın. Anahtar yalnızca bu konteynerdedir.
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      # Ana model yoğunken sırayla denenir; boş bırakmak (GEMINI_FALLBACK_MODELS=) yedeği kapatır.
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS-gemini-3.7-flash,gemini-3.5-flash-lite}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+      cv-parser:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          '/nodejs/bin/node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # frontend ağı: Caddy erişimi ve HIBP için dış bağlantı. backend: yalnızca veritabanı.
+    # parser: yalnızca CV ayrıştırıcı (ADR-0008).
+    networks: [backend, frontend, parser]
+
+  web:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [frontend]
+
+  # ADR-0008: güvenilmeyen PDF'leri okuyan yalıtılmış servis. Yalnızca iç ağdadır (internete ve
+  # veritabanına erişemez, portu dışarı açılmaz); salt okunur, kaynakları sınırlıdır.
+  cv-parser:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: apps/cv-parser/Dockerfile
+    image: jobtrack-cv-parser
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 64
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [parser]
+
+  # ADR-0007: yerel test posta kutusu. Gönderilen kodlar http://localhost:8025 adresinde görünür;
+  # yalnızca bu makineden erişilir. Gmail kullanılınca kod oraya değil gerçek adrese gider.
+  mailpit:
+    <<: *hardening
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    read_only: true
+    environment:
+      MP_MAX_MESSAGES: 200
+    ports:
+      - '127.0.0.1:${MAILPIT_PORT:-8025}:8025'
+    tmpfs:
+      - /data
+      - /tmp
+    networks: [frontend]
+
+  # NFR-11: şifreli yedek. Yalnızca elle veya zamanlayıcıyla çalışır:
+  #   docker compose run --rm backup
+  backup:
+    profiles: [ops]
+    build:
+      context: .
+      dockerfile: infra/backup/Dockerfile
+    image: jobtrack-backup
+    # Yedek dosyaları ana makinedeki kullanıcıya ait olsun (scripts/backup.sh ayarlar).
+    user: '${BACKUP_UID:-1000}:${BACKUP_GID:-1000}'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    environment:
+      PGHOST: db
+      PGDATABASE: jobtrack
+      PGUSER: jobtrack_migrator
+      PGPASSWORD: ${MIGRATOR_DB_PASSWORD}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+    tmpfs:
+      - /tmp
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+
+networks:
+  frontend:
+  backend:
+    internal: true
+  parser:
+    internal: true
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

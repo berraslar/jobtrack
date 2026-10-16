@@ -1,0 +1,38 @@
+{
+	admin off
+}
+
+# Yerelde SITE_ADDRESS boş kalır (:80, HTTP). Üretimde alan adı verilir; Caddy otomatik HTTPS açar.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# A02: güvenlik başlıkları. CSP'de inline script yok.
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		# Tüm kaynaklar aynı kökenden gelir; başka sitelerin bu kaynakları gömmesi ve sayfanın
+		# izinsiz çapraz köken kaynak yüklemesi engellenir (ZAP 90004).
+		Cross-Origin-Resource-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:3000 {
+			header_up -X-Request-Id
+		}
+	}
+
+	handle {
+		root * /srv
+		@hashed path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header /index.html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

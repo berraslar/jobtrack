@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# En az yetki (A01/A03): varsayılan olarak yalnızca okuma.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, tip kontrolü, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # API entegrasyon testleri Testcontainers ile gerçek PostgreSQL başlatır (runner'da Docker hazır).
+      - run: pnpm test
+      - run: pnpm build
+      - name: Paket boyutu bütçesi (NFR-05)
+        run: pnpm check:bundle
+
+  e2e:
+    name: Uçtan uca + erişilebilirlik + Lighthouse
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Runner'daki Google Chrome kullanılır. Ortam yalıtılmıştır ve sonunda silinir.
+      - name: Playwright (FR akışları, axe WCAG 2.2 AA, 360 px) ve Lighthouse CI (NFR-03)
+        run: >-
+          ./scripts/with-test-stack.sh sh -c
+          'pnpm exec playwright test -c e2e &&
+          pnpm dlx @lhci/cli@0.15.1 autorun --config=lighthouserc.cjs'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: playwright-izleri
+          path: test-results/
+          retention-days: 7
+
+  dast:
+    name: OWASP ZAP baseline (DAST)
+    # Bölüm 7, adım 7: yalnızca main dalında.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./scripts/zap-baseline.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: zap-raporu
+          path: zap-report/
+          retention-days: 30
+
+  secrets:
+    name: Gizli anahtar taraması (Gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: semgrep/semgrep:1.178.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: semgrep scan --config p/typescript --config p/react --config p/owasp-top-ten --config p/secrets --error --severity ERROR --severity WARNING
+
+  dependencies:
+    name: Bağımlılık taraması (pnpm audit + OSV-Scanner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - run: pnpm audit --audit-level high
+      - uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+
+  images:
+    name: Docker imajları + Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          docker build -f apps/api/Dockerfile -t jobtrack-api:ci .
+          docker build -f apps/web/Dockerfile -t jobtrack-web:ci .
+          docker build -f apps/cv-parser/Dockerfile -t jobtrack-cv-parser:ci .
+      - name: Trivy (API)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: jobtrack-api:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Trivy (web)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: jobtrack-web:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Trivy (cv-parser)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: jobtrack-cv-parser:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Uçtan uca duman testi (docker compose)
+        run: |
+          ./scripts/init-env.sh
+          docker compose up -d --wait
+          curl -fsS http://localhost:8080/api/health
+          curl -fsSI http://localhost:8080/ | grep -i content-security-policy
+          # Uçtan uca: kayıt → oturum bilgisi (gerçek veritabanı, roller ve RLS ile)
+          curl -fsS -c jar -H 'Origin: http://localhost:8080' -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com","password":"ci-icin-uzun-parola-123"}' \
+            http://localhost:8080/api/auth/register
+          curl -fsS -b jar http://localhost:8080/api/auth/me | grep -q ci@example.com
+          docker compose down -v

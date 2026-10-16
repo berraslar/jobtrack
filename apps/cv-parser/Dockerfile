@@ -13,9 +13,14 @@ RUN pnpm --filter @jobtrack/cv-parser build
 
 FROM node:24-slim
 # poppler-utils: pdftotext/pdftoppm; tesseract: OCR (Türkçe + İngilizce dil verisi).
+# Güvenlik güncellemeleri uygulanır; çalışırken kullanılmayan npm/corepack (ve bağımlılıkları)
+# imajdan çıkarılır (A03, Trivy).
 RUN apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-tur tesseract-ocr-eng \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /repo/apps/cv-parser/dist ./dist

@@ -16,7 +16,7 @@ RUN pnpm --filter @jobtrack/api... build \
  && pnpm --filter @jobtrack/api deploy --prod --legacy /out
 
 # Çalıştırma: distroless, kabuk yok, root olmayan kullanıcı (A02, A03).
-FROM gcr.io/distroless/nodejs24-debian12:nonroot
+FROM gcr.io/distroless/nodejs24-debian13:nonroot
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /out/package.json ./
@@ -24,4 +24,6 @@ COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /out/dist ./dist
 COPY --from=build /out/migrations ./migrations
 EXPOSE 3000
+# Taban imaj zaten root olmayan kullanıcıyla gelir; açıkça yazılır (A02).
+USER nonroot
 CMD ["dist/server.js"]

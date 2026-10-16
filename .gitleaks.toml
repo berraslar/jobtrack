@@ -1,0 +1,17 @@
+# Gitleaks: varsayılan kurallar açık. Yalnızca uydurma test parolalarının bulunduğu test dosyaları,
+# uçtan uca test yardımcıları, CI test ortamı ve örnek/yerel betikler hariç tutulur. Gerçek gizli
+# değerler yalnızca .env dosyasındadır ve depoya girmez (.gitignore).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test verisi ve örnek değerler"
+paths = [
+  '''(^|/)[^/]+\.test\.tsx?$''',
+  '''^e2e/''',
+  '''^\.github/workflows/ci\.yml$''',
+  '''^scripts/init-env\.sh$''',
+  '''^scripts/load-test\.sh$''',
+  '''^scripts/load/''',
+]

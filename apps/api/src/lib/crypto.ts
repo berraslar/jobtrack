@@ -44,7 +44,7 @@ const VERSION = 'v1';
  */
 export function encrypt(key: Buffer, plaintext: string, aad: string): string {
   const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv(CIPHER, key, iv);
+  const cipher = createCipheriv(CIPHER, key, iv, { authTagLength: TAG_BYTES });
   cipher.setAAD(Buffer.from(aad));
   const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -59,7 +59,11 @@ export function decrypt(key: Buffer, payload: string, aad: string): string {
   const iv = raw.subarray(0, IV_BYTES);
   const tag = raw.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
   const ciphertext = raw.subarray(IV_BYTES + TAG_BYTES);
-  const decipher = createDecipheriv(CIPHER, key, iv);
+  // Kısaltılmış etiket kabul edilmez: kısa GCM etiketi sahte şifreli metne kapı açar.
+  if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) {
+    throw new Error('Desteklenmeyen şifreli veri biçimi');
+  }
+  const decipher = createDecipheriv(CIPHER, key, iv, { authTagLength: TAG_BYTES });
   decipher.setAAD(Buffer.from(aad));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');

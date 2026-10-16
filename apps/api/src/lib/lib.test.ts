@@ -22,6 +22,14 @@ describe('AES-256-GCM (A04)', () => {
     expect(() => decrypt(key, payload.slice(0, -1) + last, 'a')).toThrow();
   });
 
+  it('kısaltılmış (16 bayttan kısa) doğrulama etiketini reddeder', () => {
+    // Boş metinde gövde yalnızca IV + etikettir; son baytları kesmek etiketi kısaltır.
+    const payload = encrypt(key, '', 'a');
+    const raw = Buffer.from(payload.slice(3), 'base64url');
+    const truncated = `v1.${raw.subarray(0, raw.length - 4).toString('base64url')}`;
+    expect(() => decrypt(key, truncated, 'a')).toThrow('Desteklenmeyen şifreli veri biçimi');
+  });
+
   it('aynı metni her seferinde farklı şifreler (rastgele IV)', () => {
     expect(encrypt(key, 'x', 'a')).not.toBe(encrypt(key, 'x', 'a'));
   });

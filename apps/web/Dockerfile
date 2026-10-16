@@ -13,7 +13,15 @@ COPY packages/shared packages/shared
 COPY apps/web apps/web
 RUN pnpm --filter @jobtrack/web build
 
+# Caddy ikilisi güncel Go ve x/net ile yeniden derlenir: resmî imajdaki ikili, düzeltmesi Go
+# 1.26.9 ve x/net 0.60.0'da olan HTTP/2 ve TLS açıklarını içeriyor (A03, Trivy).
+FROM golang:1.26-alpine AS caddy
+RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.7 \
+ && CGO_ENABLED=0 xcaddy build v2.11.7 --output /usr/bin/caddy \
+      --replace golang.org/x/net=golang.org/x/net@v0.60.0
+
 # Caddy: statik dosyalar + /api ters vekil + güvenlik başlıkları.
 FROM caddy:2-alpine
+COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY infra/caddy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/apps/web/dist /srv

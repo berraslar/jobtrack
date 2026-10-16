@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fastify/cookie": "^11.1.2",
+    "@fastify/cookie": "^11.1.3",
     "@fastify/rate-limit": "^11.2.0",
     "@jobtrack/shared": "workspace:*",
     "@node-rs/argon2": "~2.2.1",

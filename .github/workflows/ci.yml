@@ -161,9 +161,19 @@ jobs:
           docker compose up -d --wait
           curl -fsS http://localhost:8080/api/health
           curl -fsSI http://localhost:8080/ | grep -i content-security-policy
-          # Uçtan uca: kayıt → oturum bilgisi (gerçek veritabanı, roller ve RLS ile)
-          curl -fsS -c jar -H 'Origin: http://localhost:8080' -H 'Content-Type: application/json' \
+          # Uçtan uca: kayıt → e-posta kodu (Mailpit) → doğrulama → oturum bilgisi
+          # (gerçek veritabanı, roller ve RLS ile; FR-01, FR-18)
+          curl -fsS -c jar -b jar -H 'Origin: http://localhost:8080' -H 'Content-Type: application/json' \
             -d '{"email":"ci@example.com","password":"ci-icin-uzun-parola-123"}' \
             http://localhost:8080/api/auth/register
+          ID=''
+          for _ in $(seq 1 30); do
+            ID=$(curl -fsS 'http://127.0.0.1:8025/api/v1/search?query=to%3A%22ci%40example.com%22' | jq -r '.messages[0].ID // empty')
+            [ -n "$ID" ] && break
+            sleep 1
+          done
+          CODE=$(curl -fsS "http://127.0.0.1:8025/api/v1/message/$ID" | jq -r .Text | grep -oE '\b[0-9]{6}\b' | head -n1)
+          curl -fsS -c jar -b jar -H 'Origin: http://localhost:8080' -H 'Content-Type: application/json' \
+            -d "{\"code\":\"$CODE\"}" http://localhost:8080/api/auth/email/verify
           curl -fsS -b jar http://localhost:8080/api/auth/me | grep -q ci@example.com
           docker compose down -v

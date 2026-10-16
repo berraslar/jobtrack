@@ -136,7 +136,7 @@ OWASP Top 10:2025'in her kategorisi için JobTrack'te en az bir somut kontrol va
 | --- | --- |
 | A01 Erişim kontrolü hataları | Her sorgu oturumdaki `user_id` ile filtrelenir; PostgreSQL RLS ikinci savunma hattıdır. UUIDv7 ID kullanılır. Başkasının kaydına erişim 404 döner. Uygulama dışarıya kullanıcının verdiği bir URL'ye istek atmaz (SSRF yüzeyi yok); yapay zekâ sağlayıcısının adresi yalnızca yapılandırmadan gelir (ADR-0010). |
 | A02 Güvenlik yapılandırma hataları | Caddy güvenlik başlıkları: sıkı CSP (`default-src 'self'`, inline script yok), HSTS, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `frame-ancestors 'none'`. Üretimde hata ayrıntısı ve stack trace gösterilmez. Varsayılan hesap ve parola yoktur. |
-| A03 Yazılım tedarik zinciri hataları | `pnpm-lock.yaml` commit edilir, CI'da `--frozen-lockfile` kullanılır. Dependabot, `pnpm audit` ve OSV-Scanner çalışır. SBOM (CycloneDX) üretilir. GitHub Actions sürümleri commit SHA ile sabitlenir. Docker taban imajları resmi ve minimal (distroless/alpine) olur ve Trivy ile taranır. |
+| A03 Yazılım tedarik zinciri hataları | `pnpm-lock.yaml` commit edilir, CI'da `--frozen-lockfile` kullanılır. `pnpm audit` ve OSV-Scanner çalışır. SBOM (CycloneDX) üretilir. GitHub Actions sürümleri commit SHA ile sabitlenir. Docker taban imajları resmi ve minimal (distroless/alpine) olur ve Trivy ile taranır. |
 | A04 Kriptografik hatalar | Yalnızca HTTPS (TLS 1.2+). Parolalar Argon2id ile hash'lenir; OWASP'ın önerdiği minimum ayar 19 MiB bellek, 2 iterasyon ve 1 paralelliktir. TOTP gizli anahtarı AES-256-GCM ile şifrelenir. Gizli anahtarlar koda değil, ortam değişkenine konur. |
 | A05 Enjeksiyon | Drizzle ile tüm SQL sorguları parametrelidir; ham SQL'de string birleştirme yasaktır (ESLint kuralı). React çıktıyı otomatik kaçışlar (escape); `dangerouslySetInnerHTML` yasaktır. CSV dışa aktarımda `=`, `+`, `-`, `@` ile başlayan hücreler kaçışlanır (CSV injection). |
 | A06 Güvensiz tasarım | Bu dokümandaki tehdit modeli kodlamadan önce yapılır. Her girdi için Zod şeması izin listesi (allowlist) mantığıyla çalışır; tanımsız alanlar reddedilir (mass assignment koruması). İstek gövdesi 100 KB ile sınırlıdır. Yer imi betiğinden gelen adres parametreleri de aynı şemalardan geçer (ADR-0009). Yapay zekâ çıktısı güvenilmeyen girdi sayılır: şemadan geçmeyen yanıt reddedilir, olmayan tarih/süre/şirket adı işaretlenir (ADR-0010). |
@@ -189,7 +189,7 @@ Kod kalitesi kişinin dikkatine bırakılmaz; kurallar CI tarafından zorlanır 
 6. Lighthouse CI
 7. `main` dalında: OWASP ZAP baseline taraması (DAST), imajın imzalanması, sunucuya dağıtım
 
-GitHub'da `main` korunur: doğrudan push kapalıdır, tüm kontroller yeşil olmadan birleştirme yapılamaz. CodeQL ve Dependabot güvenlik uyarıları açıktır.
+Her push'ta tüm kontroller CI'da çalışır; imajlar yalnızca `main` yeşilken yayımlanır.
 
 ## 8. Yol haritası ve uygulama
 

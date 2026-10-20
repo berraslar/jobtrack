@@ -30,17 +30,14 @@ export const options = {
   },
 };
 
+// Tam oturum load-test.sh'de alınır: giriş e-posta kodu ister (FR-19), kod Mailpit'ten okunur.
 export function setup() {
-  const res = http.post(
-    `${BASE}/api/auth/login`,
-    JSON.stringify({ email: __ENV.LOAD_EMAIL, password: __ENV.LOAD_PASSWORD }),
-    { headers: HEADERS },
-  );
-  check(res, { 'giriş 200': (r) => r.status === 200 });
-  const cookie = res.cookies['__Host-session'][0].value;
+  const cookie = __ENV.LOAD_SESSION;
+  if (!cookie) throw new Error('LOAD_SESSION tanımlı değil');
   const list = http.get(`${BASE}/api/applications`, {
     headers: { ...HEADERS, cookie: `__Host-session=${cookie}` },
   });
+  if (list.status !== 200) throw new Error(`Başvuru listesi ${list.status} döndü`);
   const ids = list.json('applications').map((a) => a.id);
   if (ids.length < 1000) throw new Error(`1000 başvuru bekleniyordu, ${ids.length} var`);
   return { cookie, ids };

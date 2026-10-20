@@ -74,6 +74,25 @@ export const trustedDevices = pgTable('trusted_devices', {
   expiresAt: timestamptz('expires_at').notNull(),
 });
 
+/**
+ * FR-01/FR-18 (0010): e-postası doğrulanmayı bekleyen kayıt. `passwordHash` NULL ise e-posta zaten
+ * kayıtlıdır; satır yalnızca yanıtı ayırt edilemez kılmak için vardır ve hiçbir kod onu doğrulamaz.
+ */
+export const pendingRegistrations = pgTable('pending_registrations', {
+  id: uuid('id').primaryKey(),
+  tokenHash: bytea('token_hash').notNull(),
+  email: text('email').notNull(),
+  passwordHash: text('password_hash'),
+  locale: text('locale', { enum: ['tr', 'en'] }).notNull(),
+  codeHash: bytea('code_hash').notNull(),
+  codeCreatedAt: timestamptz('code_created_at').notNull(),
+  codeExpiresAt: timestamptz('code_expires_at').notNull(),
+  attempts: integer('attempts').notNull(),
+  emailsSent: integer('emails_sent').notNull(),
+  createdAt: timestamptz('created_at').notNull(),
+  expiresAt: timestamptz('expires_at').notNull(),
+});
+
 export const mfaRecoveryCodes = pgTable('mfa_recovery_codes', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull(),

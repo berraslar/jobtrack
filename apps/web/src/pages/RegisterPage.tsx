@@ -43,7 +43,8 @@ export function RegisterPage() {
     setFieldErrors({});
     setPending(true);
     try {
-      // FR-18: hesap e-posta koduyla doğrulanınca açılır.
+      // FR-01/FR-18: hesap, e-postaya gelen kod doğrulanınca açılır. Adres zaten kayıtlıysa da
+      // yanıt aynıdır (A07); kod yerine adresin sahibine bilgilendirme e-postası gider.
       const result = await api('/auth/register', {
         method: 'POST',
         body: parsed.data,
@@ -63,7 +64,7 @@ export function RegisterPage() {
   if (emailTiming) {
     return (
       <AuthLayout>
-        <EmailCodeStep initialTiming={emailTiming} onVerified={() => signedIn()} />
+        <EmailCodeStep flow="register" initialTiming={emailTiming} onVerified={() => signedIn()} />
       </AuthLayout>
     );
   }

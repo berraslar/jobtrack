@@ -19,7 +19,7 @@ Uygulama: <http://localhost:8080> (127.0.0.1 değil, `localhost` kullanın; Orig
 
 Kayıtta, yeni cihazdan girişte (TOTP kapalıysa) ve hesap silmede e-postaya 2 dakika geçerli bir kod gider.
 
-- **Yerel (varsayılan):** Kodlar Mailpit test kutusuna düşer: <http://localhost:8025> (yalnızca bu makineden erişilir).
+- **Yerel (varsayılan):** Kodlar Mailpit test kutusuna düşer: <http://localhost:8025> (yalnızca bu makineden erişilir). `APP_ORIGIN` `https://` ile başlayan, yayındaki bir kurulumda Mailpit kullanılamaz; API başlamaz ve `SMTP_*` ayarlarını ister.
 - **Gmail ile gerçek gönderim:** Google hesabında 2 adımlı doğrulamayı açın, _Güvenlik › Uygulama şifreleri_ bölümünden bir uygulama şifresi oluşturun ve `.env` dosyasına ekleyin:
 
   ```bash
@@ -121,6 +121,7 @@ Tüm uçlar `/api` altındadır. Belirtilmedikçe oturum ister; durum değiştir
 | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `POST /auth/register`, `POST /auth/login`, `POST /auth/mfa/verify`                                                             | Kayıt, giriş, ikinci adım (herkese açık / yarım oturum)                                                   |
 | `POST /auth/email/verify`, `POST /auth/email/resend`                                                                           | E-posta kodu adımı ve yeni kod (yarım oturum; FR-18, FR-19)                                               |
+| `POST /auth/register/verify`, `POST /auth/register/resend`                                                                     | Kayıt kodu ve yeni kod; hesap kod doğrulanınca açılır (herkese açık, kayıt çerezi; FR-18, ADR-0011)       |
 | `GET /auth/me`, `POST /auth/logout`                                                                                            | Oturum bilgisi ve CSRF token'ı, çıkış                                                                     |
 | `GET /auth/sessions`, `DELETE /auth/sessions`                                                                                  | Aktif oturumlar, tümünü kapat (FR-03)                                                                     |
 | `POST /auth/mfa/setup`, `POST /auth/mfa/enable`                                                                                | TOTP kurulumu (FR-02)                                                                                     |

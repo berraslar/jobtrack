@@ -130,6 +130,40 @@ describe('kayıt formu', () => {
     expect(await screen.findByText(/en az 12 karakter olmalı/)).toBeDefined();
     expect(calls.some((c) => c.key === 'POST /api/auth/register')).toBe(false);
   });
+
+  it('kayıt kodu bekleyen kayıt ucuna gider; kayıtlı adres notu herkese aynı gösterilir (FR-01, A07)', async () => {
+    let registered = false;
+    const calls = mockApi({
+      'GET /api/auth/me': () => (registered ? Response.json(ME) : unauthorized()),
+      'POST /api/auth/register': () =>
+        Response.json(
+          { status: 'email_required', expiresInSeconds: 120, resendInSeconds: 60 },
+          { status: 202 },
+        ),
+      'POST /api/auth/register/verify': () => {
+        registered = true;
+        return Response.json({ status: 'ok', failedAttemptsSinceLastLogin: 0 });
+      },
+      'GET /api/applications': () => Response.json({ applications: [] }),
+      'GET /api/cv-versions': () => Response.json({ cvVersions: [] }),
+    });
+    renderAt('/kayit');
+    fireEvent.change(await screen.findByLabelText('E-posta'), { target: { value: 'a@b.co' } });
+    fireEvent.change(screen.getByLabelText('Parola'), {
+      target: { value: 'cok-guvenli-parola-2026' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Hesap oluştur' }));
+
+    expect(await screen.findByRole('heading', { name: 'E-postanızı doğrulayın' })).toBeDefined();
+    expect(screen.getByText(/zaten bir hesabı varsa kod yerine/)).toBeDefined();
+    fireEvent.change(screen.getByLabelText('E-posta kodu'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Doğrula' }));
+    expect(await screen.findByRole('heading', { name: 'Başvurular' })).toBeDefined();
+    expect(body(calls.find((c) => c.key === 'POST /api/auth/register/verify'))).toEqual({
+      code: '123456',
+    });
+    expect(calls.some((c) => c.key === 'POST /api/auth/email/verify')).toBe(false);
+  });
 });
 
 describe('CSRF (A08)', () => {

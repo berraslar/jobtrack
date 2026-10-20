@@ -19,7 +19,7 @@ describe('dil seçimi (FR-16)', () => {
       'POST /api/auth/register': () =>
         Response.json(
           { status: 'email_required', expiresInSeconds: 120, resendInSeconds: 60 },
-          { status: 201 },
+          { status: 202 },
         ),
     });
     renderAt('/kayit');

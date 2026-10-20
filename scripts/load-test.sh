@@ -17,8 +17,8 @@ PASSWORD=yuk-testi-parolasi-2026
 JAR=$(mktemp)
 trap 'rm -f "$JAR"' EXIT
 
-# Kullanıcı API ile oluşturulur (gerçek Argon2id hash); kayıt yarım oturum açar ve e-posta kodu
-# gönderir. Kod Mailpit'ten okunup doğrulanınca tam oturum elde edilir (FR-18, FR-19).
+# Kullanıcı API ile oluşturulur (gerçek Argon2id hash); kayıt e-postaya kod gönderir, hesap ve
+# tam oturum kod doğrulanınca açılır. Kod Mailpit'ten okunur (FR-01, FR-18).
 curl -fsS -o /dev/null -c "$JAR" -b "$JAR" -H "Origin: $E2E_BASE_URL" -H "Content-Type: application/json" \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" "$E2E_BASE_URL/api/auth/register"
 ID=''
@@ -29,7 +29,7 @@ for _ in $(seq 1 30); do
 done
 CODE=$(curl -fsS "$E2E_MAILPIT_URL/api/v1/message/$ID" | jq -r .Text | grep -oE '\b[0-9]{6}\b' | head -n1)
 curl -fsS -o /dev/null -c "$JAR" -b "$JAR" -H "Origin: $E2E_BASE_URL" -H "Content-Type: application/json" \
-  -d "{\"code\":\"$CODE\"}" "$E2E_BASE_URL/api/auth/email/verify"
+  -d "{\"code\":\"$CODE\"}" "$E2E_BASE_URL/api/auth/register/verify"
 SESSION=$(awk '$6 == "__Host-session" { print $7 }' "$JAR")
 
 docker compose -p "$E2E_PROJECT" --env-file "$E2E_ENV_FILE" exec -T db \

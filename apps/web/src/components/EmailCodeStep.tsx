@@ -26,17 +26,26 @@ function useSecondsLeft(deadline: number): number {
   return Math.max(0, Math.ceil((deadline - now) / 1000));
 }
 
+/** Kod adımının uç noktaları: yeni cihazdan girişte yarım oturum, kayıtta bekleyen kayıt. */
+const ENDPOINTS = {
+  login: { verify: '/auth/email/verify', resend: '/auth/email/resend' },
+  register: { verify: '/auth/register/verify', resend: '/auth/register/resend' },
+} as const;
+
 /**
  * FR-18/FR-19: e-postaya gelen 6 haneli kod adımı (kayıt ve yeni cihazdan giriş). Kod 2 dakika
  * geçerlidir; geri sayım ekranda görünür, yeni kod 60 sn sonra istenebilir.
  */
 export function EmailCodeStep({
+  flow = 'login',
   initialTiming,
   onVerified,
 }: {
+  flow?: keyof typeof ENDPOINTS;
   initialTiming: EmailCodeTiming;
   onVerified: (result: Extract<LoginResponse, { status: 'ok' }>) => Promise<void>;
 }) {
+  const endpoints = ENDPOINTS[flow];
   const { t, errorMessage } = useI18n();
   const s = t.emailStep;
   const heading = useRef<HTMLHeadingElement>(null);
@@ -60,7 +69,7 @@ export function EmailCodeStep({
     setNotice(null);
     setPending(true);
     try {
-      const result = await api('/auth/email/verify', {
+      const result = await api(endpoints.verify, {
         method: 'POST',
         body: { code: formText(event.currentTarget, 'code') },
         schema: loginResponseSchema,
@@ -77,7 +86,7 @@ export function EmailCodeStep({
     setError(null);
     setNotice(null);
     try {
-      const timing = await api('/auth/email/resend', {
+      const timing = await api(endpoints.resend, {
         method: 'POST',
         schema: emailCodeTimingSchema,
       });
@@ -100,7 +109,10 @@ export function EmailCodeStep({
       >
         {s.title}
       </h1>
-      <p className="mb-6 text-sm text-ink-muted">{s.hint}</p>
+      <p className="mb-6 text-sm text-ink-muted">
+        {s.hint}
+        {flow === 'register' && ` ${s.registerHint}`}
+      </p>
       <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
         <div aria-live="polite">
           {error && <Alert>{error}</Alert>}

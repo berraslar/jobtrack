@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import postgres from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -13,6 +14,7 @@ import {
   type TestDatabase,
   testMailer,
   DEVICE_COOKIE_NAME,
+  REGISTRATION_COOKIE_NAME,
   lastEmailCode,
   outbox,
 } from '../../test/helpers.js';
@@ -138,49 +140,79 @@ describe('veritabanı rolleri ve RLS (A01, ADR-0002)', () => {
   });
 });
 
-describe('kayıt (FR-01)', () => {
-  it('hesap oluşturur, güvenli çerezle oturum açar ve parolayı Argon2id ile saklar', async () => {
+describe('kayıt (FR-01, FR-18)', () => {
+  const startRegistration = async (email = uniqueEmail()) => {
+    const agent = new TestAgent(app);
+    const res = await agent.request('POST', '/api/auth/register', { email, password: PASSWORD });
+    expect(res.statusCode).toBe(202);
+    return { agent, email, res };
+  };
+  const verify = (agent: TestAgent, code: string) =>
+    agent.request('POST', '/api/auth/register/verify', { code });
+  const other = (code: string) => (code === '000000' ? '111111' : '000000');
+
+  it('kayıt hesap açmaz; kod doğrulanınca e-postası doğrulanmış hesap ve tam oturum açılır', async () => {
     const agent = new TestAgent(app);
     const email = uniqueEmail();
     const res = await agent.request('POST', '/api/auth/register', {
       email: email.toUpperCase(),
       password: PASSWORD,
     });
-    expect(res.statusCode).toBe(201);
-
-    const cookie = res.cookies.find((c) => c.name === COOKIE_NAME);
-    expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax', path: '/' });
-    expect(cookie?.domain).toBeUndefined();
-
-    const [row] = await admin<{ password_hash: string; email_verified_at: Date | null }[]>`
-      select password_hash, email_verified_at from users where email = ${email}`;
-    expect(row?.password_hash).toMatch(/^\$argon2id\$/);
-    expect(row?.email_verified_at).toBeNull();
-
-    // FR-18: e-posta doğrulanana kadar yalnızca yarım oturum vardır.
+    expect(res.statusCode).toBe(202);
     expect(res.json()).toEqual({
       status: 'email_required',
       expiresInSeconds: 120,
       resendInSeconds: 60,
     });
+    // Oturum yok; yalnızca bekleyen kaydın çerezi var.
+    expect(res.cookies.find((c) => c.name === COOKIE_NAME)).toBeUndefined();
+    const cookie = res.cookies.find((c) => c.name === REGISTRATION_COOKIE_NAME);
+    expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax', path: '/' });
+    expect(cookie?.domain).toBeUndefined();
+    expect(await admin`select id from users where email = ${email}`).toHaveLength(0);
     expect((await agent.request('GET', '/api/auth/me')).statusCode).toBe(401);
-    await agent.completeEmailStep(email, res);
+
+    const code = lastEmailCode(email);
+    expect(outbox.at(-1)?.subject).toBe('JobTrack kayıt doğrulama kodunuz');
+    const [pending] = await admin<
+      { password_hash: string; code_hash: Buffer; token_hash: Buffer }[]
+    >`
+      select password_hash, code_hash, token_hash from pending_registrations where email = ${email}`;
+    expect(pending?.password_hash).toMatch(/^\$argon2id\$/);
+    expect(pending?.code_hash.length).toBe(32);
+    expect(pending?.code_hash.toString('utf8')).not.toContain(code);
+    expect(pending?.token_hash.toString('base64url')).not.toBe(agent.registration);
+
+    const verified = await verify(agent, code);
+    expect(verified.statusCode).toBe(200);
+    expect(verified.json()).toEqual({ status: 'ok', failedAttemptsSinceLastLogin: 0 });
+    expect(verified.cookies.find((c) => c.name === REGISTRATION_COOKIE_NAME)?.value).toBe('');
+    expect(agent.registration).toBeUndefined();
+    expect(agent.device).toBeDefined();
+
+    const [row] = await admin<{ password_hash: string; email_verified_at: Date | null }[]>`
+      select password_hash, email_verified_at from users where email = ${email}`;
+    expect(row?.password_hash).toMatch(/^\$argon2id\$/);
+    expect(row?.email_verified_at).not.toBeNull();
+    expect(await admin`select id from pending_registrations where email = ${email}`).toHaveLength(
+      0,
+    );
     const me = await agent.request('GET', '/api/auth/me');
     expect(me.json()).toMatchObject({ email, mfaEnabled: false, locale: 'tr' });
   });
 
   it('kayıtta seçilen arayüz dilini saklar (FR-16)', async () => {
     const agent = new TestAgent(app);
+    const email = uniqueEmail();
     const res = await agent.request('POST', '/api/auth/register', {
-      email: uniqueEmail(),
+      email,
       password: PASSWORD,
       locale: 'en',
     });
-    expect(res.statusCode).toBe(201);
-    const email = outbox.at(-1)?.to ?? '';
-    // Kod e-postası da hesabın dilindedir.
-    expect(outbox.at(-1)?.subject).toBe('Your JobTrack verification code');
-    await agent.completeEmailStep(email, res);
+    expect(res.statusCode).toBe(202);
+    // Kod e-postası da seçilen dildedir.
+    expect(outbox.at(-1)?.subject).toBe('Your JobTrack sign-up code');
+    expect((await verify(agent, lastEmailCode(email))).statusCode).toBe(200);
     await agent.refreshCsrf();
     expect((await agent.request('GET', '/api/auth/me')).json()).toMatchObject({ locale: 'en' });
   });
@@ -202,14 +234,128 @@ describe('kayıt (FR-01)', () => {
     expect(res.json()).toMatchObject({ code: 'password_breached' });
   });
 
-  it('aynı e-postayla ikinci kaydı genel bir mesajla reddeder', async () => {
+  it('kayıtlı e-postayla kayıt aynı yanıtı alır; kod gitmez, hesap sahibi bilgilendirilir (A07)', async () => {
     const email = uniqueEmail();
     await new TestAgent(app).register(email, PASSWORD);
-    const res = await new TestAgent(app).request('POST', '/api/auth/register', {
+    const fresh = await startRegistration();
+
+    const before = outbox.length;
+    const { agent, res } = await startRegistration(email);
+    expect(res.json()).toEqual(fresh.res.json());
+    expect(res.cookies.map((c) => [c.name, c.httpOnly, c.secure, c.sameSite, c.maxAge])).toEqual(
+      fresh.res.cookies.map((c) => [c.name, c.httpOnly, c.secure, c.sameSite, c.maxAge]),
+    );
+    // Adrese tek bir e-posta gider: kod değil, bilgilendirme.
+    expect(outbox.slice(before)).toHaveLength(1);
+    const notice = outbox.at(-1);
+    expect(notice).toMatchObject({ to: email, subject: 'JobTrack: bu adresle yeni kayıt denendi' });
+    expect(notice?.text).not.toMatch(/\b\d{6}\b/);
+
+    // Hiçbir kod bu kaydı tamamlayamaz; hata, gerçek bir kayıttaki yanlış kodla aynıdır.
+    const guess = await verify(agent, '123456');
+    const wrong = await verify(fresh.agent, other(lastEmailCode(fresh.email)));
+    expect(guess.statusCode).toBe(401);
+    expect(guess.json<{ error: string; code: string }>()).toMatchObject({
+      code: wrong.json<{ code: string }>().code,
+      error: wrong.json<{ error: string }>().error,
+    });
+    // Yeniden gönderme de aynı davranır; yine yalnızca bilgilendirme gider.
+    clockOffsetMs = 61 * 1000;
+    const resent = await agent.request('POST', '/api/auth/register/resend');
+    expect(resent.json()).toEqual({ expiresInSeconds: 120, resendInSeconds: 60 });
+    expect(outbox.at(-1)?.text).not.toMatch(/\b\d{6}\b/);
+    // Mevcut hesaba dokunulmaz.
+    const [row] = await admin<
+      { n: number }[]
+    >`select count(*)::int as n from users where email = ${email}`;
+    expect(row?.n).toBe(1);
+    expect((await new TestAgent(app).login(email, PASSWORD)).statusCode).toBe(200);
+  });
+
+  it('kayıt kodu 2 dakika geçerlidir; çerezsiz doğrulama aynı hatayı alır', async () => {
+    const { agent, email } = await startRegistration();
+    const code = lastEmailCode(email);
+    expect(
+      (await new TestAgent(app).request('POST', '/api/auth/register/verify', { code })).json(),
+    ).toMatchObject({
+      code: 'invalid_email_code',
+    });
+    clockOffsetMs = 2 * 60 * 1000 + 1000;
+    const res = await verify(agent, code);
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ code: 'invalid_email_code' });
+  });
+
+  it('5 hatalı denemeden sonra doğru kod da geçmez; başka kaydın kodu geçmez', async () => {
+    const a = await startRegistration();
+    const codeA = lastEmailCode(a.email);
+    const b = await startRegistration();
+    const codeB = lastEmailCode(b.email);
+    if (codeA !== codeB) expect((await verify(b.agent, codeA)).statusCode).toBe(401);
+    for (let i = 0; i < 5; i++) await verify(a.agent, other(codeA));
+    expect((await verify(a.agent, codeA)).statusCode).toBe(401);
+    expect(await admin`select id from users where email = ${a.email}`).toHaveLength(0);
+  });
+
+  it('aynı kodla eşzamanlı iki doğrulamadan yalnızca biri hesap açar', async () => {
+    const { agent, email } = await startRegistration();
+    const twin = new TestAgent(app);
+    twin.registration = agent.registration;
+    const code = lastEmailCode(email);
+    const results = await Promise.all([verify(agent, code), verify(twin, code)]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401]);
+    expect(await admin`select id from users where email = ${email}`).toHaveLength(1);
+  });
+
+  it('yeniden gönderme: 60 sn bekletir, yeni kod eskisini geçersiz kılar, adres başına saatte en fazla 5', async () => {
+    const { agent, email } = await startRegistration();
+    const first = lastEmailCode(email);
+    expect((await agent.request('POST', '/api/auth/register/resend')).json()).toMatchObject({
+      code: 'resend_too_soon',
+    });
+    clockOffsetMs = 61 * 1000;
+    expect((await agent.request('POST', '/api/auth/register/resend')).statusCode).toBe(200);
+    const second = lastEmailCode(email);
+    if (second !== first) expect((await verify(agent, first)).statusCode).toBe(401);
+    // Yeni bir kayıt isteği de aynı adresin sınırına sayılır: 2 + 3 = 5 e-posta.
+    for (let i = 0; i < 3; i++) await startRegistration(email);
+    const blocked = await new TestAgent(app).request('POST', '/api/auth/register', {
       email,
       password: PASSWORD,
     });
-    expect(res.statusCode).toBe(409);
+    expect(blocked.statusCode).toBe(429);
+    clockOffsetMs += 61 * 1000;
+    expect((await agent.request('POST', '/api/auth/register/resend')).statusCode).toBe(429);
+  });
+
+  it('süresi dolmuş kayıt yeniden kod alamaz ve silinir', async () => {
+    const { agent, email } = await startRegistration();
+    clockOffsetMs = 60 * 60 * 1000 + 1000;
+    expect((await agent.request('POST', '/api/auth/register/resend')).json()).toMatchObject({
+      code: 'registration_expired',
+    });
+    await startRegistration();
+    expect(await admin`select id from pending_registrations where email = ${email}`).toHaveLength(
+      0,
+    );
+  });
+
+  it('uygulama rolü yalnızca çerezini taşıdığı bekleyen kaydı görür (RLS)', async () => {
+    const { agent } = await startRegistration();
+    const sql = postgres(testDb.appUrl, { max: 1 });
+    try {
+      expect(await sql`select id from pending_registrations`).toHaveLength(0);
+      const own = createHash('sha256')
+        .update(agent.registration ?? '')
+        .digest('hex');
+      const rows = await sql.begin(async (tx) => {
+        await tx`select set_config('app.registration_token', ${own}, true)`;
+        return tx`select id from pending_registrations`;
+      });
+      expect(rows).toHaveLength(1);
+    } finally {
+      await sql.end();
+    }
   });
 
   it('tanımsız alanları reddeder (mass assignment)', async () => {
@@ -288,6 +434,62 @@ describe('giriş (FR-01, A07)', () => {
       password: PASSWORD,
     });
     expect(res.statusCode).toBe(429);
+  });
+
+  it('giriş kilidi yeniden başlatmada düşmez (denetim kaydından sayılır)', async () => {
+    const email = uniqueEmail();
+    await new TestAgent(app).register(email, PASSWORD);
+    for (let i = 0; i < 5; i++) {
+      await new TestAgent(app).request('POST', '/api/auth/login', {
+        email,
+        password: 'yanlis-parola-x',
+      });
+    }
+    // Yeni süreç: bellekteki sayaç boş.
+    const restarted = build();
+    try {
+      const res = await new TestAgent(restarted).request('POST', '/api/auth/login', {
+        email,
+        password: PASSWORD,
+      });
+      expect(res.statusCode).toBe(429);
+      // Kilit 15 dakika sonra kalkar.
+      clockOffsetMs = 15 * 60 * 1000 + 1000;
+      const later = await new TestAgent(restarted).request('POST', '/api/auth/login', {
+        email,
+        password: PASSWORD,
+      });
+      expect(later.json()).toMatchObject({ status: 'email_required' });
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it('başkasının hatalı denemeleri, sahibini güvenilen cihazından kilitleyemez (FR-19)', async () => {
+    const email = uniqueEmail();
+    const owner = new TestAgent(app);
+    await owner.register(email, PASSWORD);
+    await owner.request('POST', '/api/auth/logout');
+    for (let i = 0; i < 6; i++) {
+      await new TestAgent(app).request('POST', '/api/auth/login', {
+        email,
+        password: 'yanlis-parola-x',
+      });
+    }
+    const stranger = await new TestAgent(app).request('POST', '/api/auth/login', {
+      email,
+      password: PASSWORD,
+    });
+    expect(stranger.statusCode).toBe(429);
+    // Başka hesabın cihaz çerezi kilidi aşmaz.
+    const other = new TestAgent(app);
+    await other.register(uniqueEmail(), PASSWORD);
+    const borrowed = new TestAgent(app);
+    borrowed.device = other.device;
+    const res = await borrowed.request('POST', '/api/auth/login', { email, password: PASSWORD });
+    expect(res.statusCode).toBe(429);
+    const own = await owner.request('POST', '/api/auth/login', { email, password: PASSWORD });
+    expect(own.json()).toMatchObject({ status: 'ok' });
   });
 
   it('başarısız girişleri denetim kaydına IP adresini açık yazmadan kaydeder', async () => {
@@ -416,10 +618,12 @@ describe('oturum yönetimi (FR-03, A07)', () => {
 });
 
 describe('e-posta doğrulama kodu (FR-18, FR-19, ADR-0007)', () => {
+  /** Kayıtlı hesaba yeni bir cihazdan giriş: e-posta kodu istenir (yarım oturum). */
   const startRegistration = async () => {
-    const agent = new TestAgent(app);
     const email = uniqueEmail();
-    const res = await agent.request('POST', '/api/auth/register', { email, password: PASSWORD });
+    await new TestAgent(app).register(email, PASSWORD);
+    const agent = new TestAgent(app);
+    const res = await agent.request('POST', '/api/auth/login', { email, password: PASSWORD });
     expect(res.json()).toMatchObject({ status: 'email_required' });
     return { agent, email, code: lastEmailCode(email) };
   };
@@ -430,7 +634,8 @@ describe('e-posta doğrulama kodu (FR-18, FR-19, ADR-0007)', () => {
   it('kod düz metin saklanmaz, loglanmaz; yarım oturum veriye erişemez', async () => {
     const { agent, email, code } = await startRegistration();
     const rows = await admin<{ code_hash: Buffer }[]>`
-      select c.code_hash from email_codes c join users u on u.id = c.user_id where u.email = ${email}`;
+      select c.code_hash from email_codes c join users u on u.id = c.user_id
+      where u.email = ${email} and c.consumed_at is null`;
     expect(rows).toHaveLength(1);
     expect(rows[0]?.code_hash.length).toBe(32);
     expect(rows[0]?.code_hash.toString('utf8')).not.toContain(code);
@@ -519,13 +724,10 @@ describe('e-posta doğrulama kodu (FR-18, FR-19, ADR-0007)', () => {
   });
 
   it('cihaz çerezi güvenli ayarlarla gelir ve başka hesapta geçmez', async () => {
-    const email = uniqueEmail();
-    const agent = new TestAgent(app);
-    const res = await agent.request('POST', '/api/auth/register', { email, password: PASSWORD });
-    const verified = await verify(agent, lastEmailCode(email));
+    const { agent, code } = await startRegistration();
+    const verified = await verify(agent, code);
     const device = verified.cookies.find((c) => c.name === DEVICE_COOKIE_NAME);
     expect(device).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax', path: '/' });
-    expect(res.statusCode).toBe(201);
 
     // B hesabı, A'nın cihaz çereziyle kodsuz giriş yapamaz.
     const otherEmail = uniqueEmail();
@@ -556,8 +758,11 @@ describe('e-posta doğrulama kodu (FR-18, FR-19, ADR-0007)', () => {
     });
   });
 
-  it('doğrulanmamış hesap girişte yeniden kod alır ve doğrulanınca işaretlenir', async () => {
-    const { email } = await startRegistration();
+  it('doğrulanmamış (eski) hesap girişte kod alır ve doğrulanınca işaretlenir', async () => {
+    // Önce-e-posta kaydından önce açılmış hesaplar doğrulanmamış olabilir.
+    const email = uniqueEmail();
+    await new TestAgent(app).register(email, PASSWORD);
+    await admin`update users set email_verified_at = null where email = ${email}`;
     clockOffsetMs = 3 * 60 * 1000;
     const agent = new TestAgent(app);
     const login = await agent.request('POST', '/api/auth/login', { email, password: PASSWORD });
@@ -627,14 +832,15 @@ describe('iki adımlı doğrulama (FR-02)', () => {
     await agent.register(email, PASSWORD);
     const { secret } = await enableMfa(agent);
 
-    // Saldırgan her girişte yeni bir yarım oturum alarak deneme hakkını yenilemeye çalışır.
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const device = new TestAgent(app);
+    // Saldırgan önceden birçok yarım oturum alıp deneme hakkını yenilemeye çalışır.
+    const devices = Array.from({ length: 6 }, () => new TestAgent(app));
+    for (const device of devices) {
       await device.request('POST', '/api/auth/login', { email, password: PASSWORD });
+    }
+    for (const device of devices.slice(0, 5)) {
       await device.request('POST', '/api/auth/mfa/verify', { code: '000000' });
     }
-    const device = new TestAgent(app);
-    await device.request('POST', '/api/auth/login', { email, password: PASSWORD });
+    const device = devices[5] as TestAgent;
     const res = await device.request('POST', '/api/auth/mfa/verify', {
       code: generateTotp(secret, now().getTime()),
     });
@@ -644,6 +850,12 @@ describe('iki adımlı doğrulama (FR-02)', () => {
       code: generateTotp(secret, now().getTime()),
     });
     expect(after.statusCode).toBe(401);
+    // Hatalı kodlar denetim kaydında sayıldığı için yeni yarım oturum da alınamaz.
+    const fresh = await new TestAgent(app).request('POST', '/api/auth/login', {
+      email,
+      password: PASSWORD,
+    });
+    expect(fresh.statusCode).toBe(429);
   });
 
   it('aynı kodla eşzamanlı iki doğrulamadan yalnızca biri başarılı olur (atomik replay koruması)', async () => {

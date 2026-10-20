@@ -8,6 +8,7 @@ import { runMigrations } from '../db/migrate.js';
 export const TEST_ORIGIN = 'http://localhost:8080';
 export const COOKIE_NAME = '__Host-session';
 export const DEVICE_COOKIE_NAME = '__Host-device';
+export const REGISTRATION_COOKIE_NAME = '__Host-registration';
 
 /** Bellek içi posta kutusu (ADR-0007): testler gönderilen kodu buradan okur. */
 export const outbox: MailMessage[] = [];
@@ -99,6 +100,8 @@ export class TestAgent {
   csrf: string | undefined;
   /** Güvenilen cihaz çerezi (e-posta kodu bir kez doğrulanınca gelir). */
   device: string | undefined;
+  /** Bekleyen kayıt çerezi (FR-01/FR-18). */
+  registration: string | undefined;
 
   constructor(private readonly app: FastifyInstance) {}
 
@@ -125,6 +128,10 @@ export class TestAgent {
     if (cookie) this.token = cookie.value === '' ? undefined : cookie.value;
     const device = res.cookies.find((c) => c.name === DEVICE_COOKIE_NAME);
     if (device) this.device = device.value === '' ? undefined : device.value;
+    const registration = res.cookies.find((c) => c.name === REGISTRATION_COOKIE_NAME);
+    if (registration) {
+      this.registration = registration.value === '' ? undefined : registration.value;
+    }
     return res;
   }
 
@@ -132,6 +139,7 @@ export class TestAgent {
     return [
       this.token ? `${COOKIE_NAME}=${this.token}` : null,
       this.device ? `${DEVICE_COOKIE_NAME}=${this.device}` : null,
+      this.registration ? `${REGISTRATION_COOKIE_NAME}=${this.registration}` : null,
     ]
       .filter(Boolean)
       .join('; ');
@@ -153,10 +161,14 @@ export class TestAgent {
     this.csrf = res.statusCode === 200 ? res.json<{ csrfToken: string }>().csrfToken : undefined;
   }
 
-  /** Kayıt + e-posta doğrulaması; kayıt yanıtını döner. */
+  /** Kayıt + kayıt kodunun doğrulanması (hesap ancak o zaman açılır); kayıt yanıtını döner. */
   async register(email: string, password: string): Promise<LightMyRequestResponse> {
     const res = await this.request('POST', '/api/auth/register', { email, password });
-    await this.completeEmailStep(email, res);
+    if (res.statusCode !== 202) throw new Error(`kayıt başarısız: ${res.body}`);
+    const verified = await this.request('POST', '/api/auth/register/verify', {
+      code: lastEmailCode(email),
+    });
+    if (verified.statusCode !== 200) throw new Error(`kayıt doğrulanamadı: ${verified.body}`);
     await this.refreshCsrf();
     return res;
   }

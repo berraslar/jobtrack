@@ -161,6 +161,8 @@ export const en: Messages = {
   emailStep: {
     title: 'Check your email',
     hint: 'We sent a 6-digit code to your email address. Check your inbox (and spam folder).',
+    registerHint:
+      'If this address already has an account, you will get a notice instead of a code; in that case, sign in.',
     code: 'Email code',
     expiresIn: (time) => `The code expires in ${time}.`,
     expired: 'The code has expired. Request a new one.',
@@ -717,7 +719,8 @@ export const enApiErrors: Partial<Record<string, string>> = {
   mfa_already_enabled: 'Two-step verification is already on.',
   password_breached:
     'This password has appeared in a data breach. Please choose a different password.',
-  registration_failed: 'An account could not be created with this email address.',
+  registration_failed: 'This email address already has an account. Sign in instead.',
+  registration_expired: 'Your sign-up has expired. Please sign up again.',
   company_not_found: 'The selected company was not found.',
   ai_disabled: 'The AI feature is turned off on this server.',
   ai_rate_limited: 'The AI service’s free usage limit was reached. Try again in a few minutes.',

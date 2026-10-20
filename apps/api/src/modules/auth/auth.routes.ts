@@ -25,6 +25,8 @@ export interface AuthRoutesOptions {
   authService: AuthService;
   cookieName: string;
   deviceCookieName: string;
+  /** Bekleyen kaydın çerezi (FR-01/FR-18). */
+  registrationCookieName: string;
   cookieSecure: boolean;
 }
 
@@ -61,15 +63,54 @@ export async function authRoutes(app: FastifyInstance, opts: AuthRoutesOptions) 
   const clearSessionCookie = (reply: FastifyReply) =>
     reply.clearCookie(opts.cookieName, { path: '/', secure: opts.cookieSecure, sameSite: 'lax' });
 
+  /**
+   * FR-01/FR-18: kayıt hesap açmaz; e-posta kodu doğrulanınca açılır. Yanıt, adresin kayıtlı olup
+   * olmadığından bağımsız olarak aynıdır (A07). 202: istek alındı, hesap henüz yok.
+   */
   app.post(
     '/register',
     { config: { access: 'public', rateLimit: { max: 5, timeWindow: '1 hour' } } },
     async (request, reply): Promise<LoginResponse> => {
       const input = registerRequestSchema.parse(request.body);
-      const { session, timing } = await authService.register(input, meta(request));
-      setSessionCookie(reply.status(201), session);
+      const { registration, timing } = await authService.register(input);
+      reply.status(202).setCookie(opts.registrationCookieName, registration.token, {
+        path: '/',
+        httpOnly: true,
+        secure: opts.cookieSecure,
+        sameSite: 'lax',
+        maxAge: registration.maxAgeSeconds,
+      });
       return { status: 'email_required', ...timing };
     },
+  );
+
+  app.post(
+    '/register/verify',
+    { config: { access: 'public', rateLimit: { max: 10, timeWindow: FIFTEEN_MINUTES } } },
+    async (request, reply): Promise<LoginResponse> => {
+      const input = emailVerifyRequestSchema.parse(request.body);
+      const result = await authService.verifyRegistration(
+        request.cookies[opts.registrationCookieName],
+        input.code,
+        meta(request),
+      );
+      reply.clearCookie(opts.registrationCookieName, {
+        path: '/',
+        secure: opts.cookieSecure,
+        httpOnly: true,
+        sameSite: 'lax',
+      });
+      setSessionCookie(reply, result.session);
+      setDeviceCookie(reply, result.device);
+      return { status: 'ok', failedAttemptsSinceLastLogin: 0 };
+    },
+  );
+
+  app.post(
+    '/register/resend',
+    { config: { access: 'public', rateLimit: { max: 5, timeWindow: FIFTEEN_MINUTES } } },
+    async (request): Promise<EmailCodeTiming> =>
+      authService.resendRegistrationCode(request.cookies[opts.registrationCookieName]),
   );
 
   app.post(

@@ -173,4 +173,18 @@ describe('loadConfig', () => {
       }),
     ).toThrow(/SMTP_HOST/);
   });
+
+  it('HTTPS ile yayındaki kurulumda yerel Mailpit ile başlamaz; yerel HTTP kurulumda başlar', () => {
+    const env = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://a@b/c',
+      APP_SECRET: Buffer.alloc(32).toString('base64'),
+      DATA_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
+      SMTP_HOST: 'mailpit',
+    };
+    expect(() => loadConfig({ ...env, APP_ORIGIN: 'https://jobtrack.example.com' })).toThrow(
+      /Mailpit/,
+    );
+    expect(loadConfig({ ...env, APP_ORIGIN: 'http://localhost:8080' }).SMTP_HOST).toBe('mailpit');
+  });
 });

@@ -159,6 +159,8 @@ export const tr = {
   emailStep: {
     title: 'E-postanızı doğrulayın',
     hint: 'E-posta adresinize 6 haneli bir kod gönderdik. Gelen kutunuzu (ve istenmeyen klasörünü) kontrol edin.',
+    registerHint:
+      'Bu adresin zaten bir hesabı varsa kod yerine bir bilgilendirme e-postası alırsınız; o durumda giriş yapın.',
     code: 'E-posta kodu',
     expiresIn: (time: string) => `Kod ${time} içinde geçersiz olacak.`,
     expired: 'Kodun süresi doldu. Yeni kod isteyin.',

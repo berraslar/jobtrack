@@ -45,13 +45,17 @@ export function createSmtpMailer(config: SmtpConfig): Mailer {
   };
 }
 
-export type EmailCodePurpose = 'login' | 'account_delete';
+export type EmailCodePurpose = 'login' | 'register' | 'account_delete';
 
 const TEXT: Record<Locale, Record<EmailCodePurpose, { subject: string; intro: string }>> = {
   tr: {
     login: {
       subject: 'JobTrack doğrulama kodunuz',
       intro: 'JobTrack hesabınıza giriş için doğrulama kodunuz:',
+    },
+    register: {
+      subject: 'JobTrack kayıt doğrulama kodunuz',
+      intro: 'JobTrack hesabınızı oluşturmak için doğrulama kodunuz:',
     },
     account_delete: {
       subject: 'JobTrack hesap silme onay kodu',
@@ -62,6 +66,10 @@ const TEXT: Record<Locale, Record<EmailCodePurpose, { subject: string; intro: st
     login: {
       subject: 'Your JobTrack verification code',
       intro: 'Your verification code for signing in to JobTrack:',
+    },
+    register: {
+      subject: 'Your JobTrack sign-up code',
+      intro: 'Your verification code for creating your JobTrack account:',
     },
     account_delete: {
       subject: 'JobTrack account deletion code',
@@ -82,11 +90,36 @@ export function emailCodeMessage(
   code: string,
 ): MailMessage {
   const text = locale === 'en' ? TEXT.en : TEXT.tr;
-  const parts = purpose === 'account_delete' ? text.account_delete : text.login;
+  const parts =
+    purpose === 'account_delete'
+      ? text.account_delete
+      : purpose === 'register'
+        ? text.register
+        : text.login;
   const footer = locale === 'en' ? FOOTER.en : FOOTER.tr;
   return {
     to,
     subject: parts.subject,
     text: `${parts.intro}\n\n    ${code}\n\n${footer}\n`,
   };
+}
+
+const ALREADY_REGISTERED: Record<Locale, { subject: string; text: string }> = {
+  tr: {
+    subject: 'JobTrack: bu adresle yeni kayıt denendi',
+    text: 'Bu e-posta adresiyle bir JobTrack hesabı açılmak istendi, ancak bu adresin zaten bir hesabı var. Bu sizseniz kayıt yerine giriş yapın; parolanızı hatırlamıyorsanız sunucu yöneticisinden sıfırlamasını isteyin.\n\nBu isteği siz yapmadıysanız bir şey yapmanız gerekmez: hesabınızda hiçbir değişiklik yapılmadı.\n',
+  },
+  en: {
+    subject: 'JobTrack: someone tried to sign up with this address',
+    text: 'Someone tried to create a JobTrack account with this email address, but this address already has an account. If this was you, sign in instead; if you forgot your password, ask the server administrator to reset it.\n\nIf this was not you, you do not need to do anything: nothing in your account has changed.\n',
+  },
+};
+
+/**
+ * FR-01 (A07): kayıtlı bir adresle kayıt denendiğinde kod yerine gönderilir. Kayıt ucu her iki
+ * durumda aynı yanıtı verir; hesabın var olduğunu yalnızca adresin sahibi öğrenir.
+ */
+export function alreadyRegisteredMessage(locale: Locale, to: string): MailMessage {
+  const parts = locale === 'en' ? ALREADY_REGISTERED.en : ALREADY_REGISTERED.tr;
+  return { to, subject: parts.subject, text: parts.text };
 }

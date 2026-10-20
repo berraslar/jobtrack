@@ -30,3 +30,23 @@ export function withUserTx<T>(db: Db, userId: string, fn: (tx: Tx) => Promise<T>
     return fn(tx);
   });
 }
+
+/**
+ * Bekleyen kayıt işleri (FR-01/FR-18). Transaction'ın ilk komutu, kayıt çerezindeki token'ın özetini
+ * `app.registration_token` olarak ayarlar; RLS yalnızca o kaydı gösterir. `userId` verilirse aynı
+ * transaction'da kullanıcı bağlamı da kurulur (kod doğrulanınca hesap atomik olarak açılır).
+ */
+export function withRegistrationTx<T>(
+  db: Db,
+  tokenHash: Buffer,
+  fn: (tx: Tx) => Promise<T>,
+  userId?: string,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.registration_token', ${tokenHash.toString('hex')}, true)`,
+    );
+    if (userId) await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+    return fn(tx);
+  });
+}

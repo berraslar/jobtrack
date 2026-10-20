@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ADR-0008: güvenilmeyen PDF'leri API sürecinden ayrı, ağdan yalıtılmış bir konteynerde okur.
-FROM node:24-slim AS build
+FROM node:24-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /repo
@@ -11,7 +11,7 @@ COPY tsconfig.base.json ./
 COPY apps/cv-parser apps/cv-parser
 RUN pnpm --filter @jobtrack/cv-parser build
 
-FROM node:24-slim
+FROM node:24-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 # poppler-utils: pdftotext/pdftoppm; tesseract: OCR (Türkçe + İngilizce dil verisi).
 # Güvenlik güncellemeleri uygulanır; çalışırken kullanılmayan npm/corepack (ve bağımlılıkları)
 # imajdan çıkarılır (A03, Trivy).

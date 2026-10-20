@@ -108,6 +108,9 @@ export function buildApp(config: Config, deps: AppDeps): FastifyInstance {
   // `__Host-` öneki: yalnızca Secure, Path=/ ve Domain'siz çerez kabul edilir (A07).
   const cookieName = config.COOKIE_SECURE ? '__Host-session' : 'jobtrack_session';
   const deviceCookieName = config.COOKIE_SECURE ? '__Host-device' : 'jobtrack_device';
+  const registrationCookieName = config.COOKIE_SECURE
+    ? '__Host-registration'
+    : 'jobtrack_registration';
   const mailer =
     deps.mailer ??
     createSmtpMailer({
@@ -230,6 +233,7 @@ export function buildApp(config: Config, deps: AppDeps): FastifyInstance {
         authService,
         cookieName,
         deviceCookieName,
+        registrationCookieName,
         cookieSecure: config.COOKIE_SECURE,
       });
       // Aşağıdaki tüm rotalar tam oturum ister (varsayılan erişim seviyesi 'user').

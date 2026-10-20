@@ -90,7 +90,7 @@ export async function completeEmailStep(page: Page, email: string): Promise<void
   await expect(
     page.getByRole('heading', { name: /E-postanızı doğrulayın|Check your email/ }),
   ).toBeVisible();
-  const code = await emailCodeFor(email, /doğrulama kodunuz|verification code/i);
+  const code = await emailCodeFor(email, /doğrulama kodunuz|verification code|sign-up code/i);
   await page.getByLabel(/^(E-posta kodu|Email code)$/).fill(code);
   await page.getByRole('button', { name: /^(Doğrula|Verify)$/ }).click();
 }

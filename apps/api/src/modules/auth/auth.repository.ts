@@ -5,6 +5,7 @@ import {
   auditLog,
   emailCodes,
   mfaRecoveryCodes,
+  pendingRegistrations,
   sessions,
   trustedDevices,
   users,
@@ -74,7 +75,13 @@ export async function nextUuid(db: Db): Promise<string> {
 
 export async function insertUser(
   tx: Tx,
-  values: { id: string; email: string; passwordHash: string; locale: Locale },
+  values: {
+    id: string;
+    email: string;
+    passwordHash: string;
+    locale: Locale;
+    emailVerifiedAt?: Date;
+  },
 ): Promise<void> {
   await tx.insert(users).values({ ...values, createdAt: new Date(), updatedAt: new Date() });
 }
@@ -222,14 +229,23 @@ export async function insertAudit(
 }
 
 /** Son başarılı girişten bu yana başarısız giriş sayısı. */
-export async function countFailedSinceLastSuccess(tx: Tx, userId: string): Promise<number> {
+/**
+ * Son başarılı girişten (ve verilmişse `notBefore`dan) sonraki başarısız giriş sayısı. Denetim
+ * kaydında tutulduğu için yeniden başlatmada sıfırlanmaz; giriş kilidi de bunu kullanır (A07).
+ */
+export async function countFailedSinceLastSuccess(
+  tx: Tx,
+  userId: string,
+  notBefore: Date = new Date(0),
+): Promise<number> {
   const last = await tx
     .select({ createdAt: auditLog.createdAt })
     .from(auditLog)
     .where(and(eq(auditLog.userId, userId), eq(auditLog.event, 'login_success')))
     .orderBy(desc(auditLog.createdAt))
     .limit(1);
-  const since = last[0]?.createdAt ?? new Date(0);
+  const lastSuccess = last[0]?.createdAt;
+  const since = lastSuccess && lastSuccess > notBefore ? lastSuccess : notBefore;
   const rows = await tx
     .select({ n: count() })
     .from(auditLog)
@@ -395,4 +411,96 @@ export async function isTrustedDevice(
 
 export async function deleteTrustedDevices(tx: Tx, userId: string): Promise<void> {
   await tx.delete(trustedDevices).where(eq(trustedDevices.userId, userId));
+}
+
+// FR-01/FR-18: bekleyen kayıtlar (0010). Fonksiyonlar withRegistrationTx ile açılmış bir transaction
+// alır; RLS yalnızca kayıt çerezindeki token'a ait satırı gösterir.
+
+/** Süresi dolmuş bekleyen kayıtları siler (giriş öncesi, SECURITY DEFINER). */
+export async function purgeExpiredRegistrations(db: Db, now: Date): Promise<void> {
+  await db.execute(sql`select registration_purge_expired(${now.toISOString()}::timestamptz)`);
+}
+
+/** Bu adrese `since`ten beri gönderilen kayıt e-postası sayısı (giriş öncesi, SECURITY DEFINER). */
+export async function registrationEmailsSentSince(
+  db: Db | Tx,
+  email: string,
+  since: Date,
+): Promise<number> {
+  const rows = await db.execute<{ n: number }>(
+    sql`select registration_emails_sent_since(${email}, ${since.toISOString()}::timestamptz) as n`,
+  );
+  return rows[0]?.n ?? 0;
+}
+
+export async function insertPendingRegistration(
+  tx: Tx,
+  values: {
+    tokenHash: Buffer;
+    email: string;
+    passwordHash: string | null;
+    locale: Locale;
+    codeHash: Buffer;
+    now: Date;
+    codeExpiresAt: Date;
+    expiresAt: Date;
+  },
+): Promise<void> {
+  await tx.insert(pendingRegistrations).values({
+    id: sql`uuidv7()`,
+    tokenHash: values.tokenHash,
+    email: values.email,
+    passwordHash: values.passwordHash,
+    locale: values.locale,
+    codeHash: values.codeHash,
+    codeCreatedAt: values.now,
+    codeExpiresAt: values.codeExpiresAt,
+    attempts: 0,
+    emailsSent: 1,
+    createdAt: values.now,
+    expiresAt: values.expiresAt,
+  });
+}
+
+/** Çerezin sahibi olduğu, süresi dolmamış kayıt (RLS zaten yalnızca onu gösterir). */
+export async function getPendingRegistration(tx: Tx, now: Date) {
+  const rows = await tx
+    .select()
+    .from(pendingRegistrations)
+    .where(gt(pendingRegistrations.expiresAt, now))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function countRegistrationAttempt(tx: Tx, id: string): Promise<void> {
+  await tx
+    .update(pendingRegistrations)
+    .set({ attempts: sql`${pendingRegistrations.attempts} + 1` })
+    .where(eq(pendingRegistrations.id, id));
+}
+
+/** Yeni kod: eskisi geçersiz olur, deneme sayacı sıfırlanır, gönderim sayısı artar. */
+export async function replaceRegistrationCode(
+  tx: Tx,
+  values: { id: string; codeHash: Buffer; now: Date; codeExpiresAt: Date },
+): Promise<void> {
+  await tx
+    .update(pendingRegistrations)
+    .set({
+      codeHash: values.codeHash,
+      codeCreatedAt: values.now,
+      codeExpiresAt: values.codeExpiresAt,
+      attempts: 0,
+      emailsSent: sql`${pendingRegistrations.emailsSent} + 1`,
+    })
+    .where(eq(pendingRegistrations.id, values.id));
+}
+
+/** Kod doğrulanınca kayıt silinir; aynı anda iki doğrulamadan yalnızca biri satırı silebilir. */
+export async function deletePendingRegistration(tx: Tx, id: string): Promise<boolean> {
+  const rows = await tx
+    .delete(pendingRegistrations)
+    .where(eq(pendingRegistrations.id, id))
+    .returning({ id: pendingRegistrations.id });
+  return rows.length > 0;
 }

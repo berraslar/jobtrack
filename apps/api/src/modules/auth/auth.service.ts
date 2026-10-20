@@ -12,7 +12,7 @@ import {
   type RegisterRequest,
   type SessionInfo,
 } from '@jobtrack/shared';
-import { withUserTx, type Db, type Tx } from '../../db/client.js';
+import { withRegistrationTx, withUserTx, type Db, type Tx } from '../../db/client.js';
 import type { AuditEvent } from '../../db/schema.js';
 import { AttemptLimiter } from '../../lib/attempt-limiter.js';
 import { decrypt, encrypt, hmacSha256, randomToken, sha256 } from '../../lib/crypto.js';
@@ -24,7 +24,7 @@ import {
   verifyPassword,
   type PwnedChecker,
 } from '../../lib/password.js';
-import { emailCodeMessage, type Mailer } from '../../lib/mailer.js';
+import { alreadyRegisteredMessage, emailCodeMessage, type Mailer } from '../../lib/mailer.js';
 import { createTotpSecret, totpUri, verifyTotp } from '../../lib/totp.js';
 import * as repo from './auth.repository.js';
 
@@ -36,8 +36,15 @@ export const MFA_PENDING_MS = 5 * 60 * 1000;
 export const EMAIL_CODE_TTL_MS = 2 * 60 * 1000;
 export const EMAIL_RESEND_COOLDOWN_MS = 60 * 1000;
 const EMAIL_CODES_PER_HOUR = 5;
+/** Giriş kilidi (A07): 15 dakikada 5 başarısız deneme. */
+const LOCK_MAX_FAILURES = 5;
+const LOCK_WINDOW_MS = 15 * 60 * 1000;
+/** Hesabı olmayan e-postalar için sorgularda kullanılan, hiçbir kullanıcıya ait olmayan ID. */
+const NO_USER_ID = '00000000-0000-0000-0000-000000000000';
 /** Kod başına en fazla 5 deneme; sonra kod geçersizdir. */
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
+/** Bekleyen kayıt 1 saat saklanır; adres başına saatlik e-posta sınırı da bu satırlardan sayılır. */
+export const REGISTRATION_TTL_MS = 60 * 60 * 1000;
 /** E-posta koduyla doğrulanan cihaz 30 gün hatırlanır (TOTP kapalı hesaplarda girişte kod istenmez). */
 export const TRUSTED_DEVICE_MS = 30 * 24 * 60 * 60 * 1000;
 /** last_seen_at her istekte değil, en fazla dakikada bir yazılır. */
@@ -75,6 +82,12 @@ export interface AuthenticatedSession {
   token: string;
 }
 
+/** Bekleyen kaydın çerez değeri (FR-01/FR-18). */
+export interface IssuedRegistration {
+  token: string;
+  maxAgeSeconds: number;
+}
+
 export interface IssuedSession {
   token: string;
   maxAgeSeconds: number;
@@ -106,9 +119,26 @@ export class AuthService {
     this.db = deps.db;
     this.now = deps.now ?? (() => new Date());
     const clock = () => this.now().getTime();
-    this.passwordLimiter = new AttemptLimiter(5, 15 * 60 * 1000, clock);
-    this.mfaLimiter = new AttemptLimiter(5, 15 * 60 * 1000, clock);
+    this.passwordLimiter = new AttemptLimiter(LOCK_MAX_FAILURES, LOCK_WINDOW_MS, clock);
+    this.mfaLimiter = new AttemptLimiter(LOCK_MAX_FAILURES, LOCK_WINDOW_MS, clock);
     this.emailLimiter = new AttemptLimiter(5, 15 * 60 * 1000, clock);
+  }
+
+  /**
+   * Giriş kilidi. Bellekteki sayaç hesabı olmayan e-postaları da kapsar (kilit davranışı hesabın
+   * varlığını sızdırmaz); var olan hesapta denetim kaydındaki sayı da bakılır, böylece kilit
+   * yeniden başlatmada ya da sayaç tablosu dolup eski kayıtlar atıldığında düşmez (A07).
+   */
+  private async isLoginLocked(email: string, userId: string): Promise<boolean> {
+    const persisted = await this.recentLoginFailures(userId);
+    return this.passwordLimiter.isBlocked(email) || persisted >= LOCK_MAX_FAILURES;
+  }
+
+  private recentLoginFailures(userId: string): Promise<number> {
+    const notBefore = new Date(this.now().getTime() - LOCK_WINDOW_MS);
+    return withUserTx(this.db, userId, (tx) =>
+      repo.countFailedSinceLastSuccess(tx, userId, notBefore),
+    );
   }
 
   csrfTokenFor(sessionToken: string): string {
@@ -116,13 +146,15 @@ export class AuthService {
   }
 
   /**
-   * FR-01, FR-18: hesap doğrulanmamış olarak açılır; e-postaya kod gider ve yalnızca yarım oturum
-   * verilir. Kod gönderilemezse hesap da oluşmaz (aynı transaction).
+   * FR-01, FR-18: önce e-posta, sonra hesap. Kayıt isteği hesap açmaz; bekleyen kayıt oluşturur ve
+   * adrese kod gönderir. Adres zaten kayıtlıysa yanıt aynıdır (A07: hesabın varlığı belli olmaz) ama kod
+   * gönderilmez; adresin sahibine bilgilendirme e-postası gider. Parola, sızıntı kontrolü ve sorgular
+   * her iki durumda da aynı sırayla çalışır. E-posta gönderilemezse kayıt da oluşmaz (aynı transaction).
    */
-  async register(
-    input: RegisterRequest,
-    meta: RequestMeta,
-  ): Promise<{ session: IssuedSession; timing: EmailCodeTiming }> {
+  async register(input: RegisterRequest): Promise<{
+    registration: IssuedRegistration;
+    timing: EmailCodeTiming;
+  }> {
     // Kayıt kapalıysa uç nokta hiç yokmuş gibi davranır (ADR-0003).
     if (!this.deps.registrationEnabled) throw notFound();
 
@@ -135,34 +167,150 @@ export class AuthService {
     }
 
     const passwordHash = await hashPassword(input.password);
-    const userId = await repo.nextUuid(this.db);
-    try {
-      return await withUserTx(this.db, userId, async (tx) => {
-        await repo.insertUser(tx, {
-          id: userId,
-          email: input.email,
-          passwordHash,
-          locale: input.locale ?? DEFAULT_LOCALE,
-        });
-        await this.audit(tx, userId, 'register', meta);
-        const timing = await this.issueEmailCode(
-          tx,
-          { id: userId, email: input.email, locale: input.locale ?? DEFAULT_LOCALE },
-          'login',
-          false,
-        );
-        return { session: await this.issueSession(tx, userId, true, meta), timing };
+    const now = this.now();
+    await repo.purgeExpiredRegistrations(this.db, now);
+    const sent = await repo.registrationEmailsSentSince(
+      this.db,
+      input.email,
+      new Date(now.getTime() - 60 * 60 * 1000),
+    );
+    if (sent >= EMAIL_CODES_PER_HOUR) throw tooManyAttempts();
+    const existing = await repo.findLoginCandidate(this.db, input.email);
+
+    const token = randomToken();
+    const tokenHash = sha256(token);
+    const code = newEmailCode();
+    const locale = input.locale ?? DEFAULT_LOCALE;
+    await withRegistrationTx(this.db, tokenHash, async (tx) => {
+      await repo.insertPendingRegistration(tx, {
+        tokenHash,
+        email: input.email,
+        passwordHash: existing ? null : passwordHash,
+        locale,
+        codeHash: this.registrationCodeHash(tokenHash, code),
+        now,
+        codeExpiresAt: new Date(now.getTime() + EMAIL_CODE_TTL_MS),
+        expiresAt: new Date(now.getTime() + REGISTRATION_TTL_MS),
       });
+      await this.deps.mailer.send(
+        existing
+          ? alreadyRegisteredMessage(locale, input.email)
+          : emailCodeMessage(locale, 'register', input.email, code),
+      );
+    });
+    return {
+      registration: { token, maxAgeSeconds: REGISTRATION_TTL_MS / 1000 },
+      timing: {
+        expiresInSeconds: EMAIL_CODE_TTL_MS / 1000,
+        resendInSeconds: EMAIL_RESEND_COOLDOWN_MS / 1000,
+      },
+    };
+  }
+
+  /**
+   * FR-01, FR-18: kayıt kodu doğrulanınca hesap e-postası doğrulanmış olarak açılır, tam oturum verilir
+   * ve cihaz 30 gün hatırlanır; bekleyen kayıt aynı transaction'da silinir. Yanlış kod, süresi dolmuş
+   * kayıt, kayıtlı adres (kodu hiç gönderilmemiş satır) ve çerezsiz istek aynı hatayı alır.
+   */
+  async verifyRegistration(
+    registrationToken: string | undefined,
+    code: string,
+    meta: RequestMeta,
+  ): Promise<{ session: IssuedSession; device: IssuedDevice }> {
+    const invalid = () =>
+      new AppError(401, 'E-posta kodu geçersiz veya süresi dolmuş.', 'invalid_email_code');
+    if (!registrationToken) throw invalid();
+    const tokenHash = sha256(registrationToken);
+    const userId = await repo.nextUuid(this.db);
+    const now = this.now();
+    let result: { session: IssuedSession; device: IssuedDevice } | null;
+    try {
+      result = await withRegistrationTx(
+        this.db,
+        tokenHash,
+        async (tx) => {
+          const row = await repo.getPendingRegistration(tx, now);
+          if (!row) return null;
+          const ok =
+            row.passwordHash !== null &&
+            row.attempts < EMAIL_CODE_MAX_ATTEMPTS &&
+            row.codeExpiresAt.getTime() > now.getTime() &&
+            timingSafeEqual(this.registrationCodeHash(tokenHash, code), row.codeHash);
+          if (!ok || row.passwordHash === null) {
+            await repo.countRegistrationAttempt(tx, row.id);
+            return null;
+          }
+          if (!(await repo.deletePendingRegistration(tx, row.id))) return null;
+
+          await repo.insertUser(tx, {
+            id: userId,
+            email: row.email,
+            passwordHash: row.passwordHash,
+            locale: row.locale,
+            emailVerifiedAt: now,
+          });
+          await this.audit(tx, userId, 'register', meta);
+          await this.audit(tx, userId, 'email_verified', meta);
+          await this.audit(tx, userId, 'login_success', meta);
+          const session = await this.issueSession(tx, userId, false, meta);
+          const device = await this.trustDevice(tx, userId, meta, now);
+          return { session, device };
+        },
+        userId,
+      );
     } catch (err) {
+      // Adres, kayıt beklerken başka bir yoldan kaydedildi. Kodu doğrulayan adresin sahibidir;
+      // ona hesabın var olduğunu söylemek bir şey sızdırmaz.
       if (pgErrorCode(err) === PG_UNIQUE_VIOLATION) {
         throw new AppError(
           409,
-          'Bu e-posta adresiyle kayıt oluşturulamadı.',
+          'Bu e-posta adresinin zaten bir hesabı var. Giriş yapın.',
           'registration_failed',
         );
       }
       throw err;
     }
+    if (!result) throw invalid();
+    return result;
+  }
+
+  /** Bekleyen kayıt için yeni kod (60 sn bekleme; adres başına saatte en fazla 5 e-posta). */
+  async resendRegistrationCode(registrationToken: string | undefined): Promise<EmailCodeTiming> {
+    const expired = () =>
+      new AppError(401, 'Kaydın süresi doldu. Lütfen yeniden kayıt olun.', 'registration_expired');
+    if (!registrationToken) throw expired();
+    const tokenHash = sha256(registrationToken);
+    const now = this.now();
+    return withRegistrationTx(this.db, tokenHash, async (tx) => {
+      const row = await repo.getPendingRegistration(tx, now);
+      if (!row) throw expired();
+      if (now.getTime() - row.codeCreatedAt.getTime() < EMAIL_RESEND_COOLDOWN_MS) {
+        throw new AppError(429, 'Yeni kod için biraz bekleyin.', 'resend_too_soon');
+      }
+      const sent = await repo.registrationEmailsSentSince(
+        tx,
+        row.email,
+        new Date(now.getTime() - 60 * 60 * 1000),
+      );
+      if (sent >= EMAIL_CODES_PER_HOUR) throw tooManyAttempts();
+
+      const code = newEmailCode();
+      await repo.replaceRegistrationCode(tx, {
+        id: row.id,
+        codeHash: this.registrationCodeHash(tokenHash, code),
+        now,
+        codeExpiresAt: new Date(now.getTime() + EMAIL_CODE_TTL_MS),
+      });
+      await this.deps.mailer.send(
+        row.passwordHash === null
+          ? alreadyRegisteredMessage(row.locale, row.email)
+          : emailCodeMessage(row.locale, 'register', row.email, code),
+      );
+      return {
+        expiresInSeconds: EMAIL_CODE_TTL_MS / 1000,
+        resendInSeconds: EMAIL_RESEND_COOLDOWN_MS / 1000,
+      };
+    });
   }
 
   async login(
@@ -173,9 +321,22 @@ export class AuthService {
     | { status: 'email_required'; session: IssuedSession; timing: EmailCodeTiming }
     | { status: 'ok'; session: IssuedSession; failedAttemptsSinceLastLogin: number }
   > {
-    if (this.passwordLimiter.isBlocked(input.email)) throw tooManyAttempts();
-
     const candidate = await repo.findLoginCandidate(this.db, input.email);
+    // Bu hesap için güvenilen cihazdan (FR-19) gelen giriş kilide takılmaz: başkasının hatalı
+    // denemeleri sahibini kendi cihazından kilitleyemez. Cihaz token'ı 256 bit rastgeledir ve
+    // yalnızca bu hesaba bağlıdır; IP bazlı hız sınırı yine geçerlidir.
+    // Hesap yoksa aynı sorgular hiçbir satırla eşleşmeyen bir ID ile çalışır; sorgu sayısı ve
+    // süresi hesabın varlığını belli etmez.
+    const subjectId = candidate?.id ?? NO_USER_ID;
+    const deviceToken = meta.deviceToken;
+    const fromTrustedDevice = deviceToken
+      ? await withUserTx(this.db, subjectId, (tx) =>
+          repo.isTrustedDevice(tx, subjectId, sha256(deviceToken), this.now()),
+        )
+      : false;
+    if (!fromTrustedDevice && (await this.isLoginLocked(input.email, subjectId))) {
+      throw tooManyAttempts();
+    }
     const valid = candidate
       ? await verifyPassword(candidate.passwordHash, input.password)
       : await verifyAgainstDummy(input.password);
@@ -250,19 +411,8 @@ export class AuthService {
       await repo.deleteSession(tx, pending.sessionId);
       await this.audit(tx, user.id, 'login_success', meta);
       const session = await this.issueSession(tx, user.id, false, meta);
-      const deviceToken = randomToken();
-      await repo.insertTrustedDevice(tx, {
-        userId: user.id,
-        tokenHash: sha256(deviceToken),
-        userAgent: meta.userAgent?.slice(0, 512) ?? null,
-        now,
-        expiresAt: new Date(now.getTime() + TRUSTED_DEVICE_MS),
-      });
-      return {
-        session,
-        device: { token: deviceToken, maxAgeSeconds: Math.floor(TRUSTED_DEVICE_MS / 1000) },
-        failedAttemptsSinceLastLogin,
-      };
+      const device = await this.trustDevice(tx, user.id, meta, now);
+      return { session, device, failedAttemptsSinceLastLogin };
     });
 
     if (!result) {
@@ -303,7 +453,10 @@ export class AuthService {
     meta: RequestMeta,
   ): Promise<{ session: IssuedSession; failedAttemptsSinceLastLogin: number }> {
     if (!pending.mfaPending) throw new AppError(400, 'Doğrulama beklenmiyor.', 'mfa_not_pending');
-    if (this.mfaLimiter.isBlocked(pending.userId)) {
+    if (
+      this.mfaLimiter.isBlocked(pending.userId) ||
+      (await this.recentLoginFailures(pending.userId)) >= LOCK_MAX_FAILURES
+    ) {
       await withUserTx(this.db, pending.userId, (tx) => repo.deleteSession(tx, pending.sessionId));
       throw tooManyAttempts();
     }
@@ -547,7 +700,7 @@ export class AuthService {
     }
     if (countSince >= EMAIL_CODES_PER_HOUR) throw tooManyAttempts();
 
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const code = newEmailCode();
     await repo.replaceEmailCode(tx, {
       userId: user.id,
       purpose,
@@ -609,6 +762,29 @@ export class AuthService {
     return { token, maxAgeSeconds: Math.floor(lifetime / 1000) };
   }
 
+  /** FR-19: bu cihazı 30 gün hatırlar; çerezde yalnızca rastgele token, veritabanında özeti olur. */
+  private async trustDevice(
+    tx: Tx,
+    userId: string,
+    meta: RequestMeta,
+    now: Date,
+  ): Promise<IssuedDevice> {
+    const token = randomToken();
+    await repo.insertTrustedDevice(tx, {
+      userId,
+      tokenHash: sha256(token),
+      userAgent: meta.userAgent?.slice(0, 512) ?? null,
+      now,
+      expiresAt: new Date(now.getTime() + TRUSTED_DEVICE_MS),
+    });
+    return { token, maxAgeSeconds: Math.floor(TRUSTED_DEVICE_MS / 1000) };
+  }
+
+  /** Kayıt kodunun özeti kayıt token'ına bağlıdır; başka bir kaydın satırında geçmez. */
+  private registrationCodeHash(tokenHash: Buffer, code: string): Buffer {
+    return hmacSha256(this.deps.keys.emailCode, `register:${tokenHash.toString('hex')}:${code}`);
+  }
+
   private audit(tx: Tx, userId: string, event: AuditEvent, meta: RequestMeta): Promise<void> {
     // IP adresi açık saklanmaz; anahtarlı hash ile ilişkilendirilebilir ama geri çevrilemez (KVKK).
     return repo.insertAudit(tx, {
@@ -617,6 +793,11 @@ export class AuthService {
       ipHash: hmacSha256(this.deps.keys.ipHash, meta.ip),
     });
   }
+}
+
+/** 6 haneli, kriptografik olarak rastgele kod. */
+function newEmailCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
 function generateRecoveryCode(): string {

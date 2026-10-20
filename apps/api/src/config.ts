@@ -121,6 +121,20 @@ const envSchema = z
         message: 'SMTP_HOST zorunlu (ADR-0007).',
       });
     }
+    // Yerel Mailpit yalnızca bu makineden okunan, parolasız bir test posta kutusudur. HTTPS ile
+    // yayındaki bir kurulumda kodlar kullanıcıya ulaşmaz ve sunucuya erişen herkes okuyabilir (A02).
+    if (
+      env.NODE_ENV === 'production' &&
+      env.APP_ORIGIN.startsWith('https://') &&
+      env.SMTP_HOST === 'mailpit'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SMTP_HOST'],
+        message:
+          'HTTPS ile yayındaki kurulumda yerel Mailpit kullanılamaz; .env içine SMTP_* yazın (ADR-0007).',
+      });
+    }
   });
 
 export type Config = z.infer<typeof envSchema>;
